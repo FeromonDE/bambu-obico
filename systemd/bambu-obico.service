@@ -1,0 +1,19 @@
+[Unit]
+Description=Bambu Lab A1 to Obico bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/bambu-obico
+EnvironmentFile=/home/pi/bambu-obico/.env
+ExecStart=/home/pi/bambu-obico/.venv/bin/python -m bambu_obico.bridge
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
