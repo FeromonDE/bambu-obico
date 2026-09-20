@@ -201,3 +201,19 @@ Implemented a 60-second Obico status heartbeat. The self-hosted server's printer
 Lifecycle/state access is protected with an RLock because MQTT callbacks, WebSocket reconnect callbacks, and heartbeat can access the cached state concurrently.
 
 Pending real validation: leave bridge running idle for >2 minutes and confirm Obico remains online.
+
+
+### Heartbeat validation
+
+Validated on the target host: the BambuLab A1 remained Online in Obico after the idle heartbeat change. The 60-second refresh is therefore retained.
+
+### Webcam implementation research
+
+Inspected current upstream `webcam_stream.py`, `webcam_capture.py`, `janus.py`, and `janus_config_builder.py`.
+
+For the existing Eufy source, upstream `h264_copy` uses:
+`ffmpeg -re -i <h264_http_url> -c:v copy -an -f rtp rtp://127.0.0.1:<videoport>?pkt_size=1300`
+
+Janus streaming plugin receives H264 RTP and exposes stream id 1. Janus signaling messages must be relayed bidirectionally through the Obico device WebSocket: Janus -> Obico as `{"janus": "<raw-json>"}`, and Obico -> local Janus for incoming `janus` messages. This signaling relay is mandatory; merely advertising webcam settings is insufficient.
+
+The existing working host has Janus 1.1.2 and an intentional wrapper at `/usr/bin/janus`; system `janus.service` remains disabled. Do not enable it.
