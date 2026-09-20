@@ -134,3 +134,14 @@ Manual linking protocol:
 - persist that token locally and use it for the device WebSocket.
 
 Implemented `python -m bambu_obico.link`. It never prints the returned token, writes it only to local `.env`, and changes the file mode to 0600. This deliberately implements manual 6-digit linking first; LAN auto-discovery/one-time-passcode is not required for the initial Bambu bridge.
+
+
+### Real linking validation
+
+Validated against the user's self-hosted Obico server on 2026-09-20:
+- manual 6-digit verification-code flow succeeded;
+- server returned a dedicated printer auth token;
+- `bambu_obico.link` saved it locally to `.env` without printing it;
+- Bambu A1 therefore now has its own Obico printer identity/token, separate from the existing Ender/moonraker-obico agent.
+
+Next: validate the direct Bambu -> Obico WebSocket bridge using this dedicated token.
