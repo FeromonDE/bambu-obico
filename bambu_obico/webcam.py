@@ -39,6 +39,7 @@ class WebcamBridge:
         self.ffmpeg_proc: subprocess.Popen | None = None
         self.janus_ws: websocket.WebSocketApp | None = None
         self._stop = threading.Event()
+        self._supervisor: threading.Thread | None = None
 
     def settings(self) -> dict[str, Any]:
         return {
@@ -156,12 +157,29 @@ admin: {{
         )
         threading.Thread(target=self.janus_ws.run_forever, daemon=True).start()
 
+        self._start_ffmpeg(ffmpeg)
+        self._supervisor = threading.Thread(target=self._supervise, args=(ffmpeg,), daemon=True)
+        self._supervisor.start()
+        LOG.info("Eufy H264 webcam bridge started")
+
+    def _start_ffmpeg(self, ffmpeg: str) -> None:
         self.ffmpeg_proc = subprocess.Popen([
             ffmpeg, "-loglevel", "warning", "-re", "-i", self.h264_http_url,
             "-c:v", "copy", "-an", "-f", "rtp",
             f"rtp://127.0.0.1:{VIDEO_PORT}?pkt_size=1300",
         ])
-        LOG.info("Eufy H264 webcam bridge started")
+
+    def _supervise(self, ffmpeg: str) -> None:
+        while not self._stop.wait(2):
+            if self.janus_proc is not None and self.janus_proc.poll() is not None:
+                LOG.error("Janus exited unexpectedly with code %s; webcam requires bridge restart", self.janus_proc.returncode)
+                return
+            if self.ffmpeg_proc is not None and self.ffmpeg_proc.poll() is not None:
+                code = self.ffmpeg_proc.returncode
+                LOG.warning("ffmpeg exited with code %s; restarting Eufy stream in 5 seconds", code)
+                if self._stop.wait(5):
+                    return
+                self._start_ffmpeg(ffmpeg)
 
     def _on_janus_message(self, ws, raw: str) -> None:
         self.relay_to_obico({"janus": raw})
