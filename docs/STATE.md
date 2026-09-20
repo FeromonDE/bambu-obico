@@ -229,3 +229,19 @@ Migration rule:
 - no requirement to support permanent simultaneous Ender + A1 operation.
 
 This allows the final Bambu setup to reuse the host's existing system Janus/ffmpeg stack, while still avoiding destructive changes during validation.
+
+
+## Eufy / Janus webcam bridge implemented
+
+Implemented the first native Bambu webcam path:
+- source remains existing go2rtc Eufy H264 HTTP stream;
+- system `ffmpeg` copies H264 without transcoding and sends RTP locally;
+- system `janus` is launched by bambu-obico with a private runtime config;
+- primary webcam uses Obico-compatible stream id 1;
+- Janus signaling is relayed bidirectionally through the existing Obico device WebSocket;
+- webcam settings are advertised in the Obico settings message;
+- system `janus.service` is not enabled or used.
+
+Current implementation intentionally uses the existing upstream-compatible Janus ports 17730/17732-17734 because permanent simultaneous Ender+A1 operation is not required. Do not run moonraker-obico webcam streaming and bambu-obico webcam streaming simultaneously during this test.
+
+Pending real validation: Janus startup, ffmpeg H264 ingest, Obico app webcam display, and remote/mobile WebRTC.
