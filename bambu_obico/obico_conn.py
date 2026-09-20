@@ -28,10 +28,12 @@ class ObicoConn:
         server: str,
         auth_token: str,
         on_message: Callable[[dict[str, Any]], None] | None = None,
+        on_open: Callable[[], None] | None = None,
     ) -> None:
         self.url = _ws_url(server)
         self.auth_token = auth_token
         self.on_message = on_message
+        self.on_open = on_open
         self._queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=50)
         self._stop = threading.Event()
         self._connected = threading.Event()
@@ -51,6 +53,8 @@ class ObicoConn:
     def _on_open(self, ws) -> None:
         self._connected.set()
         LOG.info("Obico WebSocket connected")
+        if self.on_open is not None:
+            self.on_open()
 
     def _on_close(self, ws, status_code, message) -> None:
         self._connected.clear()
