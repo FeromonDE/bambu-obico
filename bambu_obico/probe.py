@@ -36,9 +36,16 @@ def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="bambu-obico-probe")
     client.username_pw_set("bblp", cfg.access_code)
 
-    context = ssl.create_default_context()
+    if cfg.tls_insecure:
+        # Bambu printers use a self-signed certificate on the LAN MQTT endpoint.
+        # Encryption remains enabled, but certificate/hostname verification is disabled.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    else:
+        context = ssl.create_default_context()
+
     client.tls_set_context(context)
-    client.tls_insecure_set(cfg.tls_insecure)
 
     def on_connect(client, userdata, flags, reason_code, properties):
         if reason_code != 0:
