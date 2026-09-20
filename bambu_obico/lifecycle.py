@@ -19,6 +19,7 @@ class PrintLifecycle:
     def __init__(self) -> None:
         self.previous_state: str | None = None
         self.current_print_ts: float | None = None
+        self.last_positive_remaining_seconds: float | None = None
 
     @staticmethod
     def _raw(state: Mapping[str, Any]) -> str:
@@ -31,6 +32,17 @@ class PrintLifecycle:
     def update(self, state: Mapping[str, Any], now: float | None = None) -> LifecycleUpdate:
         now = time.time() if now is None else now
         raw = self._raw(state)
+        state = dict(state)
+        remaining = state.get("mc_remaining_time")
+        if self._active(raw):
+            if isinstance(remaining, (int, float)) and not isinstance(remaining, bool):
+                if remaining > 0:
+                    self.last_positive_remaining_seconds = remaining * 60
+                elif remaining == 0 and self.last_positive_remaining_seconds is not None:
+                    # A1 rounds remaining time to whole minutes and may report
+                    # zero while the print is still active. Keep the last
+                    # useful estimate instead of making Obico show '-'.
+                    state["mc_remaining_time"] = self.last_positive_remaining_seconds / 60
         prev = self.previous_state
         self.previous_state = raw
 
@@ -51,6 +63,7 @@ class PrintLifecycle:
         if raw in PRINTING:
             if not self._active(prev):
                 self.current_print_ts = now
+                self.last_positive_remaining_seconds = None
                 event = "PrintStarted"
             elif prev in PAUSED:
                 event = "PrintResumed"
@@ -71,6 +84,7 @@ class PrintLifecycle:
 
             message = self._message(state, event)
             self.current_print_ts = None
+            self.last_positive_remaining_seconds = None
             return LifecycleUpdate(message, event)
 
         if self.current_print_ts is None:
