@@ -54,6 +54,19 @@ def main():
         print(f"MQTT connected; subscribing to {cfg.report_topic}")
         client.subscribe(cfg.report_topic)
 
+    def on_subscribe(client, userdata, mid, reason_codes, properties):
+        request_topic = f"device/{cfg.serial}/request"
+        payload = {
+            "pushing": {
+                "sequence_id": "0",
+                "command": "pushall",
+                "version": 1,
+                "push_target": 1,
+            }
+        }
+        info = client.publish(request_topic, json.dumps(payload))
+        print(f"Requested full state with pushing.pushall (mid={info.mid})")
+
     def on_message(client, userdata, message):
         try:
             payload = json.loads(message.payload.decode("utf-8"))
@@ -67,10 +80,14 @@ def main():
 
         report = _find_print_payload(payload)
         summary = {key: report[key] for key in INTERESTING_KEYS if key in report}
-        print(json.dumps(summary or {"top_level_keys": sorted(payload.keys())},
-                         ensure_ascii=False, sort_keys=True))
+        if isinstance(report, dict):
+            summary["_command"] = report.get("command")
+            summary["_msg"] = report.get("msg")
+            summary["_field_count"] = len(report)
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
 
     client.on_connect = on_connect
+    client.on_subscribe = on_subscribe
     client.on_message = on_message
 
     print(f"Connecting to Bambu MQTT at {cfg.host}:{cfg.port} ...")
