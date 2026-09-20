@@ -59,10 +59,8 @@ class WebcamBridge:
 
     def _write_configs(self) -> None:
         self.runtime.mkdir(parents=True, exist_ok=True)
-        plugin_dir = self.runtime / "plugins"
-        transport_dir = self.runtime / "transports"
-        plugin_dir.mkdir(exist_ok=True)
-        transport_dir.mkdir(exist_ok=True)
+        # Janus resolves plugin/transport .jcfg files directly from
+        # --configs-folder, not from plugin/transport subdirectories.
 
         (self.runtime / "janus.jcfg").write_text(f"""
 general: {{
@@ -88,7 +86,7 @@ transports: {{
     disable = "libjanus_mqtt.so,libjanus_nanomsg.so,libjanus_pfunix.so,libjanus_rabbitmq.so,libjanus_http.so"
 }}
 """)
-        (plugin_dir / "janus.plugin.streaming.jcfg").write_text(f"""
+        (self.runtime / "janus.plugin.streaming.jcfg").write_text(f"""
 h264-{STREAM_ID}: {{
     type = "rtp"
     id = {STREAM_ID}
@@ -110,7 +108,7 @@ h264-{STREAM_ID}: {{
     databuffermsg = false
 }}
 """)
-        (transport_dir / "janus.transport.websockets.jcfg").write_text(f"""
+        (self.runtime / "janus.transport.websockets.jcfg").write_text(f"""
 general: {{
     json = "compact"
     ws = true
@@ -134,8 +132,8 @@ admin: {{
         self._stop.clear()
         self.janus_proc = subprocess.Popen(
             [janus, "--stun-server=stun.l.google.com:19302", "--configs-folder", str(self.runtime)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
+            stdout=None,
+            stderr=None,
         )
         for _ in range(50):
             if self.janus_proc.poll() is not None:
