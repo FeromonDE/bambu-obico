@@ -42,7 +42,10 @@ class PrintLifecycle:
                 self.current_print_ts = now
                 return LifecycleUpdate(self._message(state))
             self.current_print_ts = None
-            return LifecycleUpdate(None)
+            return LifecycleUpdate({
+                "current_print_ts": -1,
+                "status": to_obico_status(state),
+            })
 
         event = None
         if raw in PRINTING:
@@ -71,7 +74,10 @@ class PrintLifecycle:
             return LifecycleUpdate(message, event)
 
         if self.current_print_ts is None:
-            return LifecycleUpdate(None, event)
+            return LifecycleUpdate({
+                "current_print_ts": -1,
+                "status": to_obico_status(state),
+            }, event)
         return LifecycleUpdate(self._message(state, event), event)
 
     def _message(self, state: Mapping[str, Any], event: str | None = None) -> dict[str, Any]:
