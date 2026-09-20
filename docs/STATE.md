@@ -289,3 +289,10 @@ Known display gaps after this validation:
 - Total time is not populated during printing.
 - Bambu remaining time is minute-granularity and may become unavailable near completion.
 - Obico UI exposes Pause/Cancel controls, but Bambu command handling has not been implemented/validated; do not assume those controls work yet.
+
+
+### Remaining-time end-of-print handling
+
+Real print UI showed 1m remaining at 84%, then '-' at 90% while still Printing. Root cause is Bambu's minute-granularity `mc_remaining_time`: an active print can report 0 before the print is actually complete, and Obico renders a zero remaining value as unavailable.
+
+Lifecycle now remembers the last positive Bambu remaining-time estimate and reuses it only while the print is still active and Bambu reports zero. On the terminal state, the real zero is preserved and the remembered estimate is cleared. Tests cover both cases.
