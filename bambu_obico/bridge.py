@@ -8,6 +8,7 @@ from .config import load_config
 from .connection import BambuConn
 from .obico_conn import ObicoConn
 from .lifecycle import PrintLifecycle
+from .webcam import WebcamBridge
 
 LOG = logging.getLogger(__name__)
 
@@ -24,12 +25,13 @@ def main() -> None:
     lifecycle = PrintLifecycle()
     last_state = None
     state_lock = threading.RLock()
+    webcam = None
 
     def presence_message():
         message = {
             "settings": {
-                "webcams": [],
-                "data_channel_id": None,
+                "webcams": webcam.settings()["webcams"] if webcam else [],
+                "data_channel_id": webcam.settings()["data_channel_id"] if webcam else None,
                 "temperature": {"profiles": []},
                 "agent": {"name": "bambu-obico", "version": "0.1.0"},
                 "installed_plugins": [],
@@ -42,11 +44,26 @@ def main() -> None:
                     message.update(update.message)
         return message
 
+    def on_obico_message(message):
+        if webcam is not None:
+            webcam.handle_obico_message(message)
+
     obico = ObicoConn(
         cfg.obico_server,
         cfg.obico_auth_token,
+        on_message=on_obico_message,
         on_open=lambda: obico.send(presence_message()),
     )
+
+    if cfg.webcam_h264_http_url and cfg.webcam_snapshot_url:
+        webcam = WebcamBridge(
+            cfg.obico_auth_token,
+            cfg.webcam_h264_http_url,
+            cfg.webcam_snapshot_url,
+            relay_to_obico=obico.send,
+        )
+        webcam.start()
+
     threading.Thread(target=obico.run_forever, daemon=True).start()
 
     def on_bambu_state(state):
@@ -76,6 +93,8 @@ def main() -> None:
     try:
         bambu.run_forever()
     finally:
+        if webcam is not None:
+            webcam.stop()
         obico.stop()
 
 
