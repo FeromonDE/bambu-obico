@@ -7,7 +7,8 @@ class PrintLifecycleTests(unittest.TestCase):
     def test_idle_start_does_not_create_fake_print(self):
         life = PrintLifecycle()
         update = life.update({"gcode_state": "FINISH", "mc_percent": 100}, now=100)
-        self.assertIsNone(update.message)
+        self.assertEqual(update.message["current_print_ts"], -1)
+        self.assertEqual(update.message["status"]["state"]["text"], "Operational")
         self.assertIsNone(life.current_print_ts)
 
     def test_start_pause_resume_done(self):
