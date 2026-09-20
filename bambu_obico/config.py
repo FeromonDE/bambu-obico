@@ -12,6 +12,8 @@ class Config:
     port: int = 8883
     tls_insecure: bool = True
     dump_json: bool = False
+    obico_server: str | None = None
+    obico_auth_token: str | None = None
 
     @property
     def report_topic(self) -> str:
@@ -43,4 +45,6 @@ def load_config() -> Config:
         port=int(os.getenv("BAMBU_MQTT_PORT", "8883")),
         tls_insecure=_bool("BAMBU_TLS_INSECURE", True),
         dump_json=_bool("BAMBU_DUMP_JSON", False),
+        obico_server=(os.getenv("OBICO_SERVER") or "").strip().rstrip("/") or None,
+        obico_auth_token=(os.getenv("OBICO_AUTH_TOKEN") or "").strip() or None,
     )
