@@ -20,7 +20,7 @@ Replace the Klipper/Moonraker printer-data side of the existing Obico setup with
 - [x] Capture/redact actual A1 report fields
 - [x] Define normalized printer state model
 - [x] Implement Bambu MQTT connection/reconnect/state cache
-- [ ] Implement Obico server adapter
+- [~] Implement Obico server adapter
 - [ ] Reuse existing go2rtc/Janus webcam pipeline
 - [ ] Add pause/resume/cancel after read-only validation
 - [ ] Add systemd installer/configuration
@@ -75,3 +75,20 @@ Added:
 - `bambu_obico/monitor.py`: compact integration test that prints only changed high-value fields from the accumulated state.
 
 Next gate: validate reconnect and delta merging against the real A1, then implement the Obico-facing adapter.
+
+
+## Obico state mapping
+
+Inspected upstream `moonraker-obico` `PrinterState.to_status()` and `ServerConn` before implementing the adapter.
+
+Added `bambu_obico/obico_state.py` to map the accumulated Bambu state directly into the status schema expected by Obico. This avoids emulating a Moonraker API.
+
+Initial mappings include:
+- Bambu print state -> Obico Operational/Printing/Paused flags
+- `mc_percent` -> progress completion
+- `mc_remaining_time` (minutes) -> Obico printTimeLeft (seconds)
+- current/total layer values
+- nozzle and bed current/target temperatures
+- `subtask_name` -> job filename
+
+Added unit tests based on the validated real A1 FINISH snapshot plus a synthetic RUNNING snapshot. Server WebSocket/auth integration is the next sub-step.
