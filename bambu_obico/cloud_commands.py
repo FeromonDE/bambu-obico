@@ -118,7 +118,8 @@ class BambuCloudCommands:
             if not event.wait(timeout):
                 raise CloudCommandError(f"No printer response for {command} (sequence_id={seq})")
             response = box["response"]
-            # Cloud-originated control uses sequence_id "0" in the stock protocol.\n            # Preserve every diagnostic field: modern firmware may reject unsigned\n            # print commands with err_code/reason even when it echoes the command.\n            result = str(response.get("result", "")).lower()
+            # Preserve diagnostics from the printer response.
+            result = str(response.get("result") or "").lower()
             if result and result != "success":
                 raise CloudCommandError(
                     f"Printer rejected {command}: result={response.get('result')!r}, "
