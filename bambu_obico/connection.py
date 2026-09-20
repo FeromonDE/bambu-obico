@@ -102,8 +102,11 @@ class BambuConn:
         self._client.connect(self.config.host, self.config.port, keepalive=30)
         try:
             self._client.loop_forever(retry_first_connection=True)
+        except KeyboardInterrupt:
+            LOG.info("Stopping on keyboard interrupt")
         finally:
             self._stop.set()
+            self._client.disconnect()
 
     def stop(self) -> None:
         self._stop.set()
