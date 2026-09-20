@@ -17,7 +17,7 @@ Replace the Klipper/Moonraker printer-data side of the existing Obico setup with
 
 - [x] Repository bootstrap
 - [x] Read-only MQTT probe
-- [ ] Capture/redact actual A1 report fields
+- [x] Capture/redact actual A1 report fields
 - [ ] Define normalized printer state model
 - [ ] Implement Bambu MQTT connection/reconnect/state cache
 - [ ] Implement Obico server adapter
@@ -40,3 +40,15 @@ Run:
 ```
 
 Expected first milestone: successful TLS/MQTT connection and compact JSON summaries from the printer report topic.
+
+
+## A1 MQTT validation
+
+Validated on a real Bambu Lab A1:
+- TLS/MQTT connection to port 8883 succeeds with the printer's self-signed certificate handled locally.
+- Subscription to `device/<serial>/report` succeeds.
+- Reports are incremental/delta payloads rather than guaranteed full-state snapshots.
+- Observed fields include `bed_temper` and `nozzle_temper`.
+- Some messages contain only the `print` object without any currently selected probe fields.
+
+Implementation consequence: the bridge must maintain a persistent state cache and merge every incoming `print` delta before mapping state to Obico. It must not treat an individual MQTT message as the complete printer state.
