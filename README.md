@@ -39,3 +39,22 @@ Never commit or paste the LAN Access Code, Obico auth token, or other credential
 ## Project state
 
 See [docs/STATE.md](docs/STATE.md).
+
+## systemd
+
+After manual validation, install the service:
+
+```bash
+sudo cp systemd/bambu-obico.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bambu-obico
+sudo systemctl status bambu-obico
+```
+
+Follow logs with:
+
+```bash
+journalctl -u bambu-obico -f
+```
+
+Do not run the bridge manually while the systemd service is active.
