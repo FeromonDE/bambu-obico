@@ -34,7 +34,7 @@ class BambuCloudCommands:
         self._token = data["accessToken"]
         self._connected = threading.Event()
         self._lock = threading.Lock()
-        self._seq = int(time.time() * 1000)
+        self._seq = 0
         self._pending: dict[str, tuple[threading.Event, dict[str, Any]]] = {}
 
         self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"bambu-obico-cloud-{self._seq}")
@@ -102,7 +102,7 @@ class BambuCloudCommands:
         if not self._connected.is_set():
             raise CloudCommandError("Cloud MQTT is not connected")
 
-        seq = self._next_sequence()
+        seq = "0"
         event = threading.Event()
         box: dict[str, Any] = {}
         with self._lock:
@@ -116,7 +116,7 @@ class BambuCloudCommands:
             if not event.wait(timeout):
                 raise CloudCommandError(f"No printer response for {command} (sequence_id={seq})")
             response = box["response"]
-            result = str(response.get("result", "")).lower()
+            # Cloud-originated control uses sequence_id "0" in the stock protocol.\n            # Preserve every diagnostic field: modern firmware may reject unsigned\n            # print commands with err_code/reason even when it echoes the command.\n            result = str(response.get("result", "")).lower()
             if result and result != "success":
                 raise CloudCommandError(
                     f"Printer rejected {command}: result={response.get('result')!r}, "
