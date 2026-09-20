@@ -52,3 +52,16 @@ Validated on a real Bambu Lab A1:
 - Some messages contain only the `print` object without any currently selected probe fields.
 
 Implementation consequence: the bridge must maintain a persistent state cache and merge every incoming `print` delta before mapping state to Obico. It must not treat an individual MQTT message as the complete printer state.
+
+
+## Full-state validation
+
+Validated `pushing.pushall` on the real A1 while retaining the current cloud-capable configuration.
+
+Observed response:
+- `command=push_status`, `msg=0`, 64 fields in the initial full snapshot.
+- Subsequent `push_status` messages use `msg=1` and contain small deltas (typically 4-5 fields).
+- Confirmed fields in the full snapshot: `gcode_state`, `mc_percent`, `mc_remaining_time`, `layer_num`, `total_layer_num`, nozzle/bed current and target temperatures, `print_type`, `stg_cur`, and `subtask_name`.
+- Idle/completed sample reported `gcode_state=FINISH`, progress 100%, layer 90/90 and remaining time 0.
+
+Conclusion: Developer/LAN-only mode is not required for the telemetry needed by the planned Obico monitoring path on this tested A1 configuration. The bridge can request an initial snapshot with `pushall`, then merge incremental reports into its state cache. Control commands remain out of scope until separately validated.
