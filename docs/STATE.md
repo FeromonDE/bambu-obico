@@ -192,3 +192,12 @@ Validated on the target host:
 - after bridge termination, Obico shows the agent/plugin offline; this is expected until the bridge is installed as a persistent service.
 
 Next implementation focus: Obico settings/agent presence and existing Eufy/go2rtc webcam integration, followed by systemd persistence.
+
+
+## Idle heartbeat
+
+Implemented a 60-second Obico status heartbeat. The self-hosted server's printer-status cache TTL is 120 seconds, so the bridge now refreshes the latest accumulated Bambu status even when MQTT has no meaningful state changes.
+
+Lifecycle/state access is protected with an RLock because MQTT callbacks, WebSocket reconnect callbacks, and heartbeat can access the cached state concurrently.
+
+Pending real validation: leave bridge running idle for >2 minutes and confirm Obico remains online.
