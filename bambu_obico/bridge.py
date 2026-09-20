@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 
 from .config import load_config
 from .connection import BambuConn
 from .obico_conn import ObicoConn
-from .obico_state import to_obico_message
+from .lifecycle import PrintLifecycle
 
 LOG = logging.getLogger(__name__)
 
@@ -24,14 +23,14 @@ def main() -> None:
     obico = ObicoConn(cfg.obico_server, cfg.obico_auth_token)
     threading.Thread(target=obico.run_forever, daemon=True).start()
 
-    # Temporary timestamp for protocol validation. Print lifecycle tracking
-    # will replace this before the bridge is considered production-ready.
-    current_print_ts = time.time()
+    lifecycle = PrintLifecycle()
 
     def on_bambu_state(state):
-        message = to_obico_message(state, current_print_ts)
-        if message:
-            obico.send(message)
+        update = lifecycle.update(state)
+        if update.transition:
+            LOG.info("Print lifecycle event: %s", update.transition)
+        if update.message:
+            obico.send(update.message)
 
     bambu = BambuConn(cfg, on_state=on_bambu_state)
     try:
