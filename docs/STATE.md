@@ -145,3 +145,20 @@ Validated against the user's self-hosted Obico server on 2026-09-20:
 - Bambu A1 therefore now has its own Obico printer identity/token, separate from the existing Ender/moonraker-obico agent.
 
 Next: validate the direct Bambu -> Obico WebSocket bridge using this dedicated token.
+
+
+### Real end-to-end transport validation
+
+Validated on 2026-09-20:
+- direct Obico WebSocket connected successfully;
+- A1 MQTT connected and `pushall` returned a 64-field full state;
+- the newly linked BambuLab A1 appeared in the Obico app;
+- Obico received the mapped filename `Shelly_Mini_DIN_Mount.gcode.3mf`.
+
+This proves the basic data path:
+`Bambu A1 MQTT -> StateCache -> Obico mapper -> authenticated /ws/dev/ -> self-hosted Obico`.
+
+Known expected gaps at this stage:
+- Obico reports no webcam because webcam settings/streamer have not been integrated yet.
+- print lifecycle is not correct yet: bridge currently uses process startup time as temporary `current_print_ts`, so an already-finished job can appear as a newly started/last print.
+- status/event transitions still need proper lifecycle tracking before production use.
