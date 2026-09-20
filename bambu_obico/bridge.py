@@ -20,12 +20,35 @@ def main() -> None:
     if not cfg.obico_server or not cfg.obico_auth_token:
         raise SystemExit("OBICO_SERVER and OBICO_AUTH_TOKEN are required")
 
-    obico = ObicoConn(cfg.obico_server, cfg.obico_auth_token)
+    lifecycle = PrintLifecycle()
+    last_state = None
+
+    def presence_message():
+        message = {
+            "settings": {
+                "webcams": [],
+                "data_channel_id": None,
+                "temperature": {"profiles": []},
+                "agent": {"name": "bambu-obico", "version": "0.1.0"},
+                "installed_plugins": [],
+            }
+        }
+        if last_state is not None and lifecycle.current_print_ts is not None:
+            update = lifecycle.update(last_state)
+            if update.message:
+                message.update(update.message)
+        return message
+
+    obico = ObicoConn(
+        cfg.obico_server,
+        cfg.obico_auth_token,
+        on_open=lambda: obico.send(presence_message()),
+    )
     threading.Thread(target=obico.run_forever, daemon=True).start()
 
-    lifecycle = PrintLifecycle()
-
     def on_bambu_state(state):
+        nonlocal last_state
+        last_state = state
         update = lifecycle.update(state)
         if update.transition:
             LOG.info("Print lifecycle event: %s", update.transition)
