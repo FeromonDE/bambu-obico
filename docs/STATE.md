@@ -245,3 +245,17 @@ Implemented the first native Bambu webcam path:
 Current implementation intentionally uses the existing upstream-compatible Janus ports 17730/17732-17734 because permanent simultaneous Ender+A1 operation is not required. Do not run moonraker-obico webcam streaming and bambu-obico webcam streaming simultaneously during this test.
 
 Pending real validation: Janus startup, ffmpeg H264 ingest, Obico app webcam display, and remote/mobile WebRTC.
+
+
+## Service hardening
+
+Added ffmpeg supervision: if the Eufy/go2rtc H264 input process exits, bambu-obico waits 5 seconds and starts ffmpeg again. Unexpected Janus exit is logged; systemd remains the outer process supervisor.
+
+Added `systemd/bambu-obico.service`:
+- runs as `pi`;
+- uses the local root-only/project `.env` for secrets;
+- starts from the project virtualenv;
+- automatic service restart after failures;
+- control-group shutdown ensures child Janus/ffmpeg processes cannot be left behind.
+
+Pending real validation: install/enable service, reboot/restart test, then real A1 print lifecycle test.
