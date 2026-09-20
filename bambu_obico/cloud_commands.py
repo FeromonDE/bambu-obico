@@ -73,7 +73,9 @@ class BambuCloudCommands:
             pending = self._pending.get(seq)
             if pending is None:
                 return
-            event, box = pending
+            event, box, expected_command = pending
+            if section.get("command") != expected_command:
+                return
             box["response"] = section
             event.set()
 
