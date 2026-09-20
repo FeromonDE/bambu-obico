@@ -296,3 +296,8 @@ Known display gaps after this validation:
 Real print UI showed 1m remaining at 84%, then '-' at 90% while still Printing. Root cause is Bambu's minute-granularity `mc_remaining_time`: an active print can report 0 before the print is actually complete, and Obico renders a zero remaining value as unavailable.
 
 Lifecycle now remembers the last positive Bambu remaining-time estimate and reuses it only while the print is still active and Bambu reports zero. On the terminal state, the real zero is preserved and the remembered estimate is cleared. Tests cover both cases.
+
+
+### Cloud control validation (2026-09-20)
+
+Cloud MQTT read access is proven, but an unsigned `print.pause` published through the cloud broker did **not** pause the live A1. The printer/report stream echoed `command=pause` with `sequence_id=0` and no `result` or `reason`; physical state did not change. Therefore an echoed command is not treated as execution acknowledgement. Keep Obico controls disabled. Current third-party protocol research indicates post-Jan-2025 firmware signs command payloads with RSA-SHA256 and a certificate id; investigate signed-command compatibility before another live control test. Do not enable stop/cancel.
