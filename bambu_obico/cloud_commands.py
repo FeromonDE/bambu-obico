@@ -35,7 +35,7 @@ class BambuCloudCommands:
         self._connected = threading.Event()
         self._lock = threading.Lock()
         self._seq = 0
-        self._pending: dict[str, tuple[threading.Event, dict[str, Any]]] = {}
+        self._pending: dict[str, tuple[threading.Event, dict[str, Any], str]] = {}
 
         self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"bambu-obico-cloud-{self._seq}")
         self._client.username_pw_set(f"u_{self._uid}", self._token)
@@ -106,7 +106,7 @@ class BambuCloudCommands:
         event = threading.Event()
         box: dict[str, Any] = {}
         with self._lock:
-            self._pending[seq] = (event, box)
+            self._pending[seq] = (event, box, command)
         try:
             payload = {"print": {"sequence_id": seq, "command": command}}
             info = self._client.publish(self.request_topic, json.dumps(payload))
