@@ -270,3 +270,22 @@ Real target-host validation completed:
 - after updating to the per-UID Janus runtime directory and restarting the service, the user confirmed the integration still works.
 
 Service startup/restart and webcam recovery across a normal service restart are therefore proven. Next validation milestone is a real Bambu A1 print lifecycle.
+
+
+## Real A1 print lifecycle validation successful
+
+A complete real print was observed on 2026-09-20:
+- `PrintStarted` emitted at 22:56:07.
+- Obico showed Printing, start time, live Eufy camera, temperatures, progress, current/total layers and remaining-time updates.
+- During the print examples observed in Obico included 84% with layer 6/15 and 1 minute remaining, then 90% with layer 9/15.
+- `PrintDone` emitted at 23:02:54.
+- Obico Last Print showed `Cone.gcode.3mf`, Finished, start 22:56, duration 7m.
+- WebRTC camera continued to establish DTLS/media/data-channel sessions during the print.
+
+This proves the end-to-end telemetry/lifecycle path for a normal successful A1 print.
+
+Known display gaps after this validation:
+- Z-height is not populated.
+- Total time is not populated during printing.
+- Bambu remaining time is minute-granularity and may become unavailable near completion.
+- Obico UI exposes Pause/Cancel controls, but Bambu command handling has not been implemented/validated; do not assume those controls work yet.
