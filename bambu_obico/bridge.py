@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 from .config import load_config
 from .connection import BambuConn
@@ -22,6 +23,7 @@ def main() -> None:
 
     lifecycle = PrintLifecycle()
     last_state = None
+    state_lock = threading.RLock()
 
     def presence_message():
         message = {
@@ -33,10 +35,11 @@ def main() -> None:
                 "installed_plugins": [],
             }
         }
-        if last_state is not None and lifecycle.current_print_ts is not None:
-            update = lifecycle.update(last_state)
-            if update.message:
-                message.update(update.message)
+        with state_lock:
+            if last_state is not None:
+                update = lifecycle.update(last_state)
+                if update.message:
+                    message.update(update.message)
         return message
 
     obico = ObicoConn(
@@ -48,12 +51,26 @@ def main() -> None:
 
     def on_bambu_state(state):
         nonlocal last_state
-        last_state = state
-        update = lifecycle.update(state)
+        with state_lock:
+            last_state = state
+            update = lifecycle.update(state)
         if update.transition:
             LOG.info("Print lifecycle event: %s", update.transition)
         if update.message:
             obico.send(update.message)
+
+    def heartbeat_loop():
+        while True:
+            time.sleep(60)
+            with state_lock:
+                if last_state is None:
+                    continue
+                update = lifecycle.update(last_state)
+            if update.message:
+                obico.send(update.message)
+                LOG.debug("Sent Obico status heartbeat")
+
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
 
     bambu = BambuConn(cfg, on_state=on_bambu_state)
     try:
