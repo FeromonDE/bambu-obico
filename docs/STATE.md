@@ -18,8 +18,8 @@ Replace the Klipper/Moonraker printer-data side of the existing Obico setup with
 - [x] Repository bootstrap
 - [x] Read-only MQTT probe
 - [x] Capture/redact actual A1 report fields
-- [ ] Define normalized printer state model
-- [ ] Implement Bambu MQTT connection/reconnect/state cache
+- [x] Define normalized printer state model
+- [x] Implement Bambu MQTT connection/reconnect/state cache
 - [ ] Implement Obico server adapter
 - [ ] Reuse existing go2rtc/Janus webcam pipeline
 - [ ] Add pause/resume/cancel after read-only validation
@@ -65,3 +65,13 @@ Observed response:
 - Idle/completed sample reported `gcode_state=FINISH`, progress 100%, layer 90/90 and remaining time 0.
 
 Conclusion: Developer/LAN-only mode is not required for the telemetry needed by the planned Obico monitoring path on this tested A1 configuration. The bridge can request an initial snapshot with `pushall`, then merge incremental reports into its state cache. Control commands remain out of scope until separately validated.
+
+
+## Connection/state implementation
+
+Added:
+- `bambu_obico/state.py`: thread-safe snapshot/delta cache; `msg=0` replaces stale session state, later deltas are merged recursively.
+- `bambu_obico/connection.py`: reusable read-only MQTT connection, TLS setup, reconnect backoff, subscription, automatic `pushall` after every successful connection, and state callbacks.
+- `bambu_obico/monitor.py`: compact integration test that prints only changed high-value fields from the accumulated state.
+
+Next gate: validate reconnect and delta merging against the real A1, then implement the Obico-facing adapter.
