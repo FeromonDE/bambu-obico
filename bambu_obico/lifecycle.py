@@ -34,17 +34,21 @@ class PrintLifecycle:
         raw = self._raw(state)
         state = dict(state)
         remaining = state.get("mc_remaining_time")
+        prev = self.previous_state
+        self.previous_state = raw
+
+        # Start a new lifecycle before processing its remaining-time sample.
+        # Otherwise the first positive sample is immediately cleared below.
+        starts_new_print = raw in PRINTING and prev is not None and not self._active(prev)
+        if starts_new_print:
+            self.last_positive_remaining_seconds = None
+
         if self._active(raw):
             if isinstance(remaining, (int, float)) and not isinstance(remaining, bool):
                 if remaining > 0:
                     self.last_positive_remaining_seconds = remaining * 60
                 elif remaining == 0 and self.last_positive_remaining_seconds is not None:
-                    # A1 rounds remaining time to whole minutes and may report
-                    # zero while the print is still active. Keep the last
-                    # useful estimate instead of making Obico show '-'.
                     state["mc_remaining_time"] = self.last_positive_remaining_seconds / 60
-        prev = self.previous_state
-        self.previous_state = raw
 
         # First full snapshot is synchronization, not a transition. If the
         # bridge starts during a print, establish a session without inventing
@@ -63,7 +67,6 @@ class PrintLifecycle:
         if raw in PRINTING:
             if not self._active(prev):
                 self.current_print_ts = now
-                self.last_positive_remaining_seconds = None
                 event = "PrintStarted"
             elif prev in PAUSED:
                 event = "PrintResumed"
