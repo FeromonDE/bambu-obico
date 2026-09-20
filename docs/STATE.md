@@ -102,3 +102,22 @@ Validated locally on the target host with Python 3.11:
 - 2 tests executed in 0.001 s.
 
 Added `tests/__init__.py` so plain `python -m unittest discover -v` discovers the suite.
+
+
+## Direct Obico transport
+
+Inspected upstream `moonraker-obico/server_conn.py`, `ws.py`, and `config.py` before implementing transport.
+
+Confirmed upstream device transport semantics:
+- device WebSocket endpoint: server URL + `/ws/dev/`
+- HTTP(S) is converted to WS(S)
+- WebSocket authentication header: `authorization: bearer <auth_token>`
+- close code 4321 means a shared auth token was detected.
+
+Implemented:
+- `obico_conn.py`: direct authenticated Obico WebSocket client with bounded send queue and reconnect backoff.
+- `bridge.py`: wires accumulated Bambu state through the Obico mapper into the WebSocket client.
+- `OBICO_SERVER` and `OBICO_AUTH_TOKEN` are loaded from local environment only.
+- `websocket-client` dependency added.
+
+Important: the current bridge uses a temporary process-start `current_print_ts` solely for protocol validation. Correct print lifecycle/event tracking must be implemented before production cutover. Existing moonraker-obico remains untouched.
