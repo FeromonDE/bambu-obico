@@ -217,3 +217,15 @@ For the existing Eufy source, upstream `h264_copy` uses:
 Janus streaming plugin receives H264 RTP and exposes stream id 1. Janus signaling messages must be relayed bidirectionally through the Obico device WebSocket: Janus -> Obico as `{"janus": "<raw-json>"}`, and Obico -> local Janus for incoming `janus` messages. This signaling relay is mandatory; merely advertising webcam settings is insufficient.
 
 The existing working host has Janus 1.1.2 and an intentional wrapper at `/usr/bin/janus`; system `janus.service` remains disabled. Do not enable it.
+
+
+### Cutover decision
+
+The existing Ender printer path is not needed in the final installation. The Bambu Lab A1 is the replacement target.
+
+Migration rule:
+- keep the existing moonraker-obico/Ender agent available only until the Bambu A1 bridge, webcam, and service operation are proven;
+- after successful A1 validation, the old Ender agent may be stopped/retired;
+- no requirement to support permanent simultaneous Ender + A1 operation.
+
+This allows the final Bambu setup to reuse the host's existing system Janus/ffmpeg stack, while still avoiding destructive changes during validation.
