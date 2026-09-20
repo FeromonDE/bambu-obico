@@ -1,6 +1,7 @@
 import unittest
 
 from bambu_obico.obico_state import to_obico_status
+from bambu_obico.lifecycle import PrintLifecycle
 
 
 class ObicoStateTests(unittest.TestCase):
@@ -36,6 +37,22 @@ class ObicoStateTests(unittest.TestCase):
         self.assertTrue(status["state"]["flags"]["printing"])
         self.assertEqual(status["progress"]["completion"], 42)
         self.assertEqual(status["progress"]["printTimeLeft"], 1020)
+
+
+    def test_active_zero_remaining_keeps_last_positive_estimate(self):
+        lifecycle = PrintLifecycle()
+        lifecycle.update({"gcode_state": "FINISH"}, now=1)
+        lifecycle.update({"gcode_state": "RUNNING", "mc_remaining_time": 1}, now=2)
+        update = lifecycle.update({"gcode_state": "RUNNING", "mc_remaining_time": 0}, now=3)
+        self.assertEqual(update.message["status"]["progress"]["printTimeLeft"], 60)
+
+    def test_terminal_zero_remaining_is_zero(self):
+        lifecycle = PrintLifecycle()
+        lifecycle.update({"gcode_state": "FINISH"}, now=1)
+        lifecycle.update({"gcode_state": "RUNNING", "mc_remaining_time": 1}, now=2)
+        update = lifecycle.update({"gcode_state": "FINISH", "mc_remaining_time": 0}, now=3)
+        self.assertEqual(update.message["status"]["progress"]["printTimeLeft"], 0)
+        self.assertIsNone(lifecycle.last_positive_remaining_seconds)
 
 
 if __name__ == "__main__":
