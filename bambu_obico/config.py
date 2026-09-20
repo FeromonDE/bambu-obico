@@ -14,6 +14,8 @@ class Config:
     dump_json: bool = False
     obico_server: str | None = None
     obico_auth_token: str | None = None
+    webcam_snapshot_url: str | None = None
+    webcam_h264_http_url: str | None = None
 
     @property
     def report_topic(self) -> str:
@@ -47,4 +49,6 @@ def load_config() -> Config:
         dump_json=_bool("BAMBU_DUMP_JSON", False),
         obico_server=(os.getenv("OBICO_SERVER") or "").strip().rstrip("/") or None,
         obico_auth_token=(os.getenv("OBICO_AUTH_TOKEN") or "").strip() or None,
+        webcam_snapshot_url=(os.getenv("WEBCAM_SNAPSHOT_URL") or "").strip() or None,
+        webcam_h264_http_url=(os.getenv("WEBCAM_H264_HTTP_URL") or "").strip() or None,
     )
