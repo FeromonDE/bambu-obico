@@ -92,3 +92,13 @@ Initial mappings include:
 - `subtask_name` -> job filename
 
 Added unit tests based on the validated real A1 FINISH snapshot plus a synthetic RUNNING snapshot. Server WebSocket/auth integration is the next sub-step.
+
+
+### Mapper test validation
+
+Validated locally on the target host with Python 3.11:
+- `test_finished_snapshot`: PASS
+- `test_running_snapshot`: PASS
+- 2 tests executed in 0.001 s.
+
+Added `tests/__init__.py` so plain `python -m unittest discover -v` discovers the suite.
