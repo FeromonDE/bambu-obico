@@ -162,3 +162,22 @@ Known expected gaps at this stage:
 - Obico reports no webcam because webcam settings/streamer have not been integrated yet.
 - print lifecycle is not correct yet: bridge currently uses process startup time as temporary `current_print_ts`, so an already-finished job can appear as a newly started/last print.
 - status/event transitions still need proper lifecycle tracking before production use.
+
+
+## Print lifecycle implementation
+
+Implemented `PrintLifecycle` and wired it into `bridge.py`.
+
+Behavior:
+- initial idle/FINISH snapshot does not create a fake print;
+- idle -> RUNNING emits `PrintStarted`;
+- RUNNING -> PAUSE emits `PrintPaused`;
+- PAUSE -> RUNNING emits `PrintResumed`;
+- active -> FINISH/COMPLETED/IDLE emits `PrintDone`;
+- active -> FAILED/ERROR emits `PrintFailed`;
+- terminal event retains the print timestamp for server association, then local lifecycle clears it;
+- restart while already printing establishes a print session without inventing a `PrintStarted` event.
+
+Limitation: the A1 start epoch has not yet been identified in observed MQTT fields, so a bridge restart during an active print uses bridge synchronization time as `current_print_ts`. A fresh print started while the bridge is running uses the observed transition time.
+
+Added deterministic lifecycle unit tests. Real transition validation on the A1 is still pending.
