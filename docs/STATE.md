@@ -259,3 +259,14 @@ Added `systemd/bambu-obico.service`:
 - control-group shutdown ensures child Janus/ffmpeg processes cannot be left behind.
 
 Pending real validation: install/enable service, reboot/restart test, then real A1 print lifecycle test.
+
+
+### systemd restart validation successful
+
+Real target-host validation completed:
+- `bambu-obico.service` runs as `pi`;
+- Python bridge, Janus and ffmpeg are in the same systemd control group;
+- Janus receives the Eufy H264 RTP stream;
+- after updating to the per-UID Janus runtime directory and restarting the service, the user confirmed the integration still works.
+
+Service startup/restart and webcam recovery across a normal service restart are therefore proven. Next validation milestone is a real Bambu A1 print lifecycle.
