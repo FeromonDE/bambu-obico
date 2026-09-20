@@ -181,3 +181,14 @@ Behavior:
 Limitation: the A1 start epoch has not yet been identified in observed MQTT fields, so a bridge restart during an active print uses bridge synchronization time as `current_print_ts`. A fresh print started while the bridge is running uses the observed transition time.
 
 Added deterministic lifecycle unit tests. Real transition validation on the A1 is still pending.
+
+
+### Lifecycle validation
+
+Validated on the target host:
+- unittest discovery now runs 5 tests; all 5 passed.
+- starting the bridge while A1 reports FINISH no longer creates a fake print.
+- with no active print, the bridge intentionally sends no print-status payload after initial synchronization.
+- after bridge termination, Obico shows the agent/plugin offline; this is expected until the bridge is installed as a persistent service.
+
+Next implementation focus: Obico settings/agent presence and existing Eufy/go2rtc webcam integration, followed by systemd persistence.
