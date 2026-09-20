@@ -121,3 +121,16 @@ Implemented:
 - `websocket-client` dependency added.
 
 Important: the current bridge uses a temporary process-start `current_print_ts` solely for protocol validation. Correct print lifecycle/event tracking must be implemented before production cutover. Existing moonraker-obico remains untouched.
+
+
+## Obico linking
+
+Inspected upstream `moonraker_obico/link.py` and `utils.verify_link_code()`.
+
+Manual linking protocol:
+- obtain a 6-digit verification code from the Obico app/web UI;
+- POST `<server>/api/v1/octo/verify/?code=<code>`;
+- successful response contains `printer.auth_token`;
+- persist that token locally and use it for the device WebSocket.
+
+Implemented `python -m bambu_obico.link`. It never prints the returned token, writes it only to local `.env`, and changes the file mode to 0600. This deliberately implements manual 6-digit linking first; LAN auto-discovery/one-time-passcode is not required for the initial Bambu bridge.
