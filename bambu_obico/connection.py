@@ -25,6 +25,9 @@ class BambuConn:
         self.on_state = on_state
         self.state = StateCache()
         self._stop = threading.Event()
+        self._connected = threading.Event()
+        self._listeners_lock = threading.RLock()
+        self._message_listeners: list[Callable[[dict[str, Any]], None]] = []
         self._client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
             client_id="bambu-obico",
@@ -54,6 +57,7 @@ class BambuConn:
             LOG.error("MQTT connection failed: %s", reason_code)
             return
         LOG.info("MQTT connected")
+        self._connected.set()
         # Never reuse cached state across sessions. A fresh pushall follows.
         self.state.clear()
         client.subscribe(self.config.report_topic)
@@ -71,6 +75,7 @@ class BambuConn:
         LOG.info("Requested full printer state")
 
     def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties) -> None:
+        self._connected.clear()
         if not self._stop.is_set():
             LOG.warning("MQTT disconnected: %s; reconnect handled by paho", reason_code)
 
@@ -80,6 +85,14 @@ class BambuConn:
         except (UnicodeDecodeError, json.JSONDecodeError):
             LOG.warning("Ignoring invalid MQTT JSON")
             return
+
+        with self._listeners_lock:
+            listeners = list(self._message_listeners)
+        for callback in listeners:
+            try:
+                callback(payload)
+            except Exception:
+                LOG.exception("Bambu MQTT message listener failed")
 
         report = payload.get("print")
         if not isinstance(report, dict) or report.get("command") != "push_status":
@@ -95,6 +108,29 @@ class BambuConn:
 
         if self.on_state is not None:
             self.on_state(snapshot)
+
+    def add_message_listener(self, callback: Callable[[dict[str, Any]], None]) -> None:
+        with self._listeners_lock:
+            if callback not in self._message_listeners:
+                self._message_listeners.append(callback)
+
+    def remove_message_listener(self, callback: Callable[[dict[str, Any]], None]) -> None:
+        with self._listeners_lock:
+            try:
+                self._message_listeners.remove(callback)
+            except ValueError:
+                pass
+
+    def wait_connected(self, timeout: float = 10.0) -> bool:
+        return self._connected.wait(timeout)
+
+    def publish_wire(self, wire_json: str, timeout: float = 5.0, qos: int = 0) -> None:
+        if not self._connected.is_set():
+            raise RuntimeError("Main Bambu MQTT connection is not connected")
+        info = self._client.publish(self.request_topic, wire_json, qos=qos)
+        info.wait_for_publish(timeout=timeout)
+        if info.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError(f"MQTT publish failed: rc={info.rc}")
 
     def run_forever(self) -> None:
         self._stop.clear()
