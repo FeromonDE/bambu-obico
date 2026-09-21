@@ -9,6 +9,8 @@ from .connection import BambuConn
 from .obico_conn import ObicoConn
 from .lifecycle import PrintLifecycle
 from .webcam import WebcamBridge
+from .signed_commands import BambuSignedCommands, SignedCommandError
+from .signing import BambuSigner, SigningError
 
 LOG = logging.getLogger(__name__)
 
@@ -26,6 +28,8 @@ def main() -> None:
     last_state = None
     state_lock = threading.RLock()
     webcam = None
+    signed_control = None
+    control_lock = threading.RLock()
 
     def presence_message():
         message = {
@@ -44,9 +48,54 @@ def main() -> None:
                     message.update(update.message)
         return message
 
+    def run_printer_command(command: str) -> None:
+        nonlocal signed_control
+        if command not in {"pause", "resume"}:
+            LOG.warning("Ignoring unsupported Obico printer command: %s", command)
+            return
+        if cfg.signing_dir is None:
+            LOG.error("Cannot execute Obico %s: BAMBU_SIGNING_DIR is not configured", command)
+            return
+
+        try:
+            with control_lock:
+                if signed_control is None:
+                    signer = BambuSigner(cfg.signing_dir)
+                    signed_control = BambuSignedCommands(cfg, signer)
+                    signed_control.start()
+                    LOG.info("Signed Bambu control channel started")
+
+                if command == "pause":
+                    signed_control.pause()
+                else:
+                    signed_control.resume()
+                LOG.info("Executed Obico printer command: %s", command)
+        except (SignedCommandError, SigningError, OSError, ValueError) as exc:
+            LOG.error("Obico printer command %s failed: %s", command, exc)
+
     def on_obico_message(message):
         if webcam is not None:
             webcam.handle_obico_message(message)
+
+        commands = message.get("commands")
+        if not isinstance(commands, list):
+            return
+
+        for item in commands:
+            if not isinstance(item, dict):
+                continue
+            command = item.get("cmd")
+            if command == "cancel":
+                # Keep cancel deliberately disabled until pause/resume have
+                # been validated through Obico on the real printer.
+                LOG.warning("Ignoring Obico cancel command: cancel is not enabled yet")
+                continue
+            if command in {"pause", "resume"}:
+                threading.Thread(
+                    target=run_printer_command,
+                    args=(command,),
+                    daemon=True,
+                ).start()
 
     obico = ObicoConn(
         cfg.obico_server,
@@ -93,6 +142,8 @@ def main() -> None:
     try:
         bambu.run_forever()
     finally:
+        if signed_control is not None:
+            signed_control.stop()
         if webcam is not None:
             webcam.stop()
         obico.stop()
