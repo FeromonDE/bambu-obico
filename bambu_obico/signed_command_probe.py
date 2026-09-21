@@ -14,7 +14,7 @@ def main() -> None:
     )
     parser.add_argument(
         "action",
-        choices=("validate", "install-cert", "pause", "resume"),
+        choices=("validate", "check-cert", "install-cert", "bed45", "pause", "resume"),
     )
     args = parser.parse_args()
 
@@ -37,9 +37,15 @@ def main() -> None:
     transport = BambuSignedCommands(cfg, signer)
     transport.start()
     try:
-        if args.action == "install-cert":
+        if args.action == "check-cert":
+            trusted = transport.check_trust()
+            print("Printer app certificate trust:", "PRESENT" if trusted else "MISSING")
+        elif args.action == "install-cert":
             transport.install_trust()
             print("Printer app certificate install: SUCCESS")
+        elif args.action == "bed45":
+            transport.set_bed_temperature(45)
+            print("Bed target: 45 C confirmed by telemetry")
         elif args.action == "pause":
             transport.pause()
             print("Pause command: state transition confirmed")
