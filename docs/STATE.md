@@ -316,3 +316,8 @@ Implemented:
 - `python -m bambu_obico.signed_command_probe validate|install-cert|pause|resume` for staged validation before wiring Obico UI controls.
 
 Next gate: place credentials locally on the target host, run `validate`, then `install-cert`, and only then test pause/resume on a controlled print. Do not wire Obico pause/cancel until the signed LAN path is confirmed on the real A1.
+
+
+### Signing credential validation successful
+
+Validated on the target host: the locally provisioned signing directory loads successfully; the RSA private key matches the leaf certificate, and the CRL parses correctly. No credential contents were printed or committed. Next validation step is `security.app_cert_install` against the real A1 while idle, before testing signed pause/resume.
