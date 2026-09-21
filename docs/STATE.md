@@ -326,3 +326,10 @@ Validated on the target host: the locally provisioned signing directory loads su
 ### Printer trust provisioning validated
 
 Validated on the real A1: `security.app_cert_install` succeeded and the printer accepted the locally provisioned application certificate for the current session. This confirms the signing certificate/CRL pair is accepted by the printer. Cloud mode remains intentionally unchanged; Developer/LAN-only mode is not enabled. Next gate: verify the printer still appears Online in Bambu Handy/Studio, then test signed `pause` on a controlled print and confirm success only from the resulting printer state transition.
+
+
+### Trust check and non-print control probe
+
+Added `check-cert` to query `security.app_cert_list` and report whether the current in-RAM trust store already contains this signing certificate.
+
+Added a non-print signed control probe: `bed45` sends the structured `print.set_bed_temp` command with target 45 C. Success is confirmed from later `print.push_status.bed_target_temper == 45`, not merely from a command echo. The normal trust workflow runs first and installs the app certificate only if it is absent. This avoids requiring a print for initial signed-command validation.
