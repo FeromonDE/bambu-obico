@@ -36,6 +36,7 @@ class BambuSignedCommands:
         self._trusted = threading.Event()
         self._state_cond = threading.Condition()
         self._last_gcode_state: str | None = None
+        self._last_bed_target: int | None = None
 
         self._lock = threading.RLock()
         self._pending: dict[tuple[str, str, str], tuple[threading.Event, dict[str, Any]]] = {}
@@ -100,9 +101,16 @@ class BambuSignedCommands:
         if isinstance(print_section, dict):
             if print_section.get("command") == "push_status":
                 state = print_section.get("gcode_state")
-                if isinstance(state, str):
-                    with self._state_cond:
+                bed_target = print_section.get("bed_target_temper")
+                with self._state_cond:
+                    changed = False
+                    if isinstance(state, str):
                         self._last_gcode_state = state.upper()
+                        changed = True
+                    if isinstance(bed_target, (int, float)):
+                        self._last_bed_target = int(round(bed_target))
+                        changed = True
+                    if changed:
                         self._state_cond.notify_all()
             self._resolve_pending("print", print_section)
 
@@ -291,6 +299,58 @@ class BambuSignedCommands:
             response = {}
 
         self._wait_for_state(desired_states, timeout)
+        return response
+
+    def _wait_for_bed_target(self, target: int, timeout: float) -> int:
+        deadline = time.monotonic() + timeout
+        with self._state_cond:
+            while True:
+                if self._last_bed_target == target:
+                    return target
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SignedCommandError(
+                        f"Bed target did not reach {target} C; "
+                        f"last target={self._last_bed_target!r}"
+                    )
+                self._state_cond.wait(remaining)
+
+    def set_bed_temperature(self, target: int, timeout: float = 12.0) -> dict[str, Any]:
+        """Set bed target temperature with the structured signed MQTT command."""
+        if not isinstance(target, int) or isinstance(target, bool):
+            raise ValueError("Bed target must be an integer")
+        if not 0 <= target <= 100:
+            raise ValueError("Bed target must be between 0 and 100 C")
+        if not self._trusted.is_set():
+            self.ensure_trust(timeout=min(timeout, 10.0))
+
+        seq = self._next_print_seq()
+        wire = self.signer.sign_print(
+            {
+                "sequence_id": seq,
+                "command": "set_bed_temp",
+                "temp": target,
+            }
+        )
+
+        try:
+            response = self._publish_and_wait(
+                "print", "set_bed_temp", seq, wire, min(timeout, 5.0)
+            )
+            result = str(response.get("result") or "").upper()
+            if result and result != "SUCCESS":
+                raise SignedCommandError(
+                    "Printer rejected set_bed_temp: "
+                    f"result={response.get('result')!r}, "
+                    f"reason={response.get('reason')!r}"
+                )
+        except SignedCommandError as exc:
+            if not str(exc).startswith("No print.set_bed_temp response"):
+                raise
+            response = {}
+
+        # Command echo alone is not treated as success. Confirm via telemetry.
+        self._wait_for_bed_target(target, timeout)
         return response
 
     def pause(self, timeout: float = 12.0) -> dict[str, Any]:
