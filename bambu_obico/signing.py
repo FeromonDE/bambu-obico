@@ -87,6 +87,42 @@ class BambuSigner:
     def crl_pem(self) -> str:
         return self._crl_pem
 
+    @staticmethod
+    def public_key_from_certificate(data: bytes) -> rsa.RSAPublicKey:
+        """Load an RSA public key from a PEM/DER X.509 certificate."""
+        try:
+            if b"-----BEGIN CERTIFICATE-----" in data:
+                cert = _first_certificate(data)
+            else:
+                cert = x509.load_der_x509_certificate(data)
+        except ValueError as exc:
+            raise SigningError("Unable to parse printer device certificate") from exc
+        pub = cert.public_key()
+        if not isinstance(pub, rsa.RSAPublicKey):
+            raise SigningError("Printer device certificate does not contain an RSA key")
+        return pub
+
+    @staticmethod
+    def encrypt_field(public_key: rsa.RSAPublicKey, plaintext: str) -> str:
+        """RSA-PKCS#1 v1.5 blockwise encryption used by secured MQTT fields."""
+        data = plaintext.encode("utf-8")
+        key_bytes = (public_key.key_size + 7) // 8
+        max_chunk = key_bytes - 11
+        if max_chunk <= 0:
+            raise SigningError("Printer RSA key is too small")
+        encrypted = bytearray()
+        if not data:
+            encrypted.extend(public_key.encrypt(b"", padding.PKCS1v15()))
+        else:
+            for offset in range(0, len(data), max_chunk):
+                encrypted.extend(
+                    public_key.encrypt(
+                        data[offset : offset + max_chunk],
+                        padding.PKCS1v15(),
+                    )
+                )
+        return base64.b64encode(bytes(encrypted)).decode("ascii")
+
     def sign_print(self, print_section: dict[str, Any]) -> str:
         """Return the exact signed MQTT envelope for a print command."""
         print_json = json.dumps(
