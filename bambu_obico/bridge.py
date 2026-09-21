@@ -138,13 +138,13 @@ def main() -> None:
                         control.disable_steppers()
                         LOG.info("Executed Obico disable steppers")
 
-                    elif re.fullmatch(r"M220\\s+S\\d{1,3}", script):
-                        value = int(re.search(r"S(\\d+)", script).group(1))
+                    elif re.fullmatch(r"M220\s+S\d{1,3}", script):
+                        value = int(re.search(r"S(\d+)", script).group(1))
                         control.set_print_speed_percent(value)
                         LOG.info("Executed Obico print speed: %s%%", value)
 
-                    elif re.fullmatch(r"M221\\s+S\\d{1,3}", script):
-                        value = int(re.search(r"S(\\d+)", script).group(1))
+                    elif re.fullmatch(r"M221\s+S\d{1,3}", script):
+                        value = int(re.search(r"S(\d+)", script).group(1))
                         control.set_flow_percent(value)
                         LOG.info("Executed Obico flow rate: %s%%", value)
 
@@ -152,8 +152,8 @@ def main() -> None:
                         control.set_fan_percent(0)
                         LOG.info("Executed Obico fan speed: 0%%")
 
-                    elif re.fullmatch(r"M106\\s+S\\d{1,3}", script):
-                        pwm = int(re.search(r"S(\\d+)", script).group(1))
+                    elif re.fullmatch(r"M106\s+S\d{1,3}", script):
+                        pwm = int(re.search(r"S(\d+)", script).group(1))
                         if not 0 <= pwm <= 255:
                             raise ValueError("M106 PWM must be 0..255")
                         percent = round((pwm / 255) * 100)
@@ -161,9 +161,9 @@ def main() -> None:
                         LOG.info("Executed Obico fan speed: %s%%", percent)
 
                     else:
-                        normalized = script.replace("\\r", "")
+                        normalized = script.replace("\r", "")
                         match = re.fullmatch(
-                            r"M83\\nT0\\nG1\\s+E(-?(?:1|10|50)(?:\\.0+)?)\\s+F300",
+                            r"M83\nT0\nG1\s+E(-?(?:1|10|50)(?:\.0+)?)\s+F300",
                             normalized,
                         )
                         if match:
