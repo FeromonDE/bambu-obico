@@ -347,3 +347,8 @@ The Bambu bridge now handles that same schema directly:
 - the signed control channel is created lazily on the first command and reuses the existing trust-check/install logic.
 
 Next gate: restart `bambu-obico.service`, run a controlled print, press Pause in Obico, confirm the A1 enters PAUSE and Obico lifecycle reports PrintPaused; then press Resume and confirm PrintResumed. Cancel remains disabled until both pass.
+
+
+### Signed controls now reuse the main LAN MQTT session
+
+An Obico temperature command reached the bridge but the first implementation timed out while creating a second MQTT control connection from inside the service. The control architecture has been changed so signed commands reuse the already-established main Bambu LAN MQTT connection instead of opening a second session. `BambuConn` now exposes a safe publish path plus report listeners; `BambuSignedCommands` can attach to that connection, receive security/print replies through the shared report stream, and must not disconnect the main telemetry session when stopped. This also reduces connection pressure on the printer and keeps telemetry/control synchronized.
