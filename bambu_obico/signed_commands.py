@@ -183,6 +183,43 @@ class BambuSignedCommands:
             with self._lock:
                 self._pending.pop(key, None)
 
+    def check_trust(self, timeout: float = 5.0) -> bool:
+        """Ask the printer whether our app certificate is currently trusted."""
+        seq = self._next_security_seq()
+        wire = json.dumps(
+            {"security": {"sequence_id": seq, "command": "app_cert_list"}},
+            separators=(",", ":"),
+        )
+        response = self._publish_and_wait(
+            "security",
+            "app_cert_list",
+            seq,
+            wire,
+            timeout,
+        )
+        cert_ids = response.get("cert_ids")
+        if not isinstance(cert_ids, list):
+            raise SignedCommandError("Printer app_cert_list response has no cert_ids array")
+        trusted = self.signer.cert_id in {str(x) for x in cert_ids}
+        if trusted:
+            self._trusted.set()
+            LOG.info("Printer already trusts app certificate")
+        else:
+            self._trusted.clear()
+            LOG.info("Printer does not currently trust app certificate")
+        return trusted
+
+    def ensure_trust(self, timeout: float = 10.0) -> None:
+        """Check volatile trust state and install only when needed."""
+        if self._trusted.is_set():
+            return
+        try:
+            if self.check_trust(timeout=min(timeout, 5.0)):
+                return
+        except SignedCommandError as exc:
+            LOG.warning("Could not verify app certificate list: %s; installing certificate", exc)
+        self.install_trust(timeout=timeout)
+
     def install_trust(self, timeout: float = 10.0) -> dict[str, Any]:
         """Install app certificate + CRL into the printer's volatile trust store."""
         seq = self._next_security_seq()
@@ -226,7 +263,7 @@ class BambuSignedCommands:
         if command not in {"pause", "resume"}:
             raise ValueError(f"Command not enabled: {command}")
         if not self._trusted.is_set():
-            self.install_trust(timeout=min(timeout, 10.0))
+            self.ensure_trust(timeout=min(timeout, 10.0))
 
         seq = self._next_print_seq()
         wire = self.signer.sign_print(
