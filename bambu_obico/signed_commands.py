@@ -530,6 +530,13 @@ class BambuSignedCommands:
             )
         return response
 
+    def warmup(self, timeout: float = 10.0) -> None:
+        """Prepare volatile trust and cache the printer RSA public key."""
+        if not self._trusted.is_set():
+            self.ensure_trust(timeout=timeout)
+        self._ensure_device_public_key(timeout=timeout)
+        LOG.info("Signed Bambu control warmup complete")
+
     def send_gcode_script(self, script: str, timeout: float = 12.0) -> dict[str, Any]:
         """Send an already-validated UI control script through secured gcode_line."""
         if not isinstance(script, str) or not script.strip():
