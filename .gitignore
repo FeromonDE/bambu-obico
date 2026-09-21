@@ -6,3 +6,10 @@ __pycache__/
 .DS_Store
 
 cloud.json
+
+# Local signing material must never be committed.
+slicer_key.pem
+slicer_cert.pem
+slicer_crl.pem
+slicer_cert_id.txt
+signing/
