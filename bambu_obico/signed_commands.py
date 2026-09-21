@@ -530,6 +530,98 @@ class BambuSignedCommands:
             )
         return response
 
+    def send_gcode_script(self, script: str, timeout: float = 12.0) -> dict[str, Any]:
+        """Send an already-validated UI control script through secured gcode_line."""
+        if not isinstance(script, str) or not script.strip():
+            raise ValueError("G-code script must be a non-empty string")
+        if not script.endswith("\n"):
+            script += "\n"
+        if not self._trusted.is_set():
+            self.ensure_trust(timeout=min(timeout, 10.0))
+        return self._send_gcode_line(script, timeout)
+
+    def jog(self, axis: str, distance: float, timeout: float = 12.0) -> dict[str, Any]:
+        """Jog A1 X/Y/Z using the same secured G-code fallback as Bambu Studio."""
+        axis = str(axis).upper()
+        if axis not in {"X", "Y", "Z"}:
+            raise ValueError(f"Unsupported jog axis: {axis}")
+        try:
+            distance = float(distance)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Jog distance must be numeric") from exc
+        if distance == 0 or abs(distance) > 100:
+            raise ValueError("Jog distance must be between -100 and 100 mm, excluding 0")
+
+        # A1 is not CoreXY. Bambu Studio inverts Y/Z before sending fallback G-code.
+        firmware_distance = -distance if axis in {"Y", "Z"} else distance
+        speed = 900 if axis == "Z" else 3000
+        script = (
+            "M211 S \n"
+            "M211 X1 Y1 Z1\n"
+            "M1002 push_ref_mode\n"
+            "G91 \n"
+            f"G1 {axis}{firmware_distance:.1f} F{speed}\n"
+            "M1002 pop_ref_mode\n"
+            "M211 R\n"
+        )
+        return self.send_gcode_script(script, timeout)
+
+    def home(self, axes, timeout: float = 20.0) -> dict[str, Any]:
+        """Home selected axes through secured G28."""
+        if isinstance(axes, str):
+            axes = [axes]
+        if not isinstance(axes, (list, tuple)):
+            raise ValueError("Home axes must be a string or list")
+        normalized = []
+        for axis in axes:
+            value = str(axis).upper()
+            if value not in {"X", "Y", "Z"}:
+                raise ValueError(f"Unsupported home axis: {axis}")
+            if value not in normalized:
+                normalized.append(value)
+        if not normalized:
+            raise ValueError("At least one home axis is required")
+
+        if set(normalized) == {"X", "Y", "Z"}:
+            script = "G28\n"
+        else:
+            script = "G28 " + " ".join(normalized) + "\n"
+        return self.send_gcode_script(script, timeout)
+
+    def disable_steppers(self, timeout: float = 12.0) -> dict[str, Any]:
+        return self.send_gcode_script("M18\n", timeout)
+
+    def set_print_speed_percent(self, value: int, timeout: float = 12.0) -> dict[str, Any]:
+        value = int(value)
+        if not 1 <= value <= 300:
+            raise ValueError("Print speed percent must be between 1 and 300")
+        return self.send_gcode_script(f"M220 S{value}\n", timeout)
+
+    def set_flow_percent(self, value: int, timeout: float = 12.0) -> dict[str, Any]:
+        value = int(value)
+        if not 1 <= value <= 300:
+            raise ValueError("Flow percent must be between 1 and 300")
+        return self.send_gcode_script(f"M221 S{value}\n", timeout)
+
+    def set_fan_percent(self, value: int, timeout: float = 12.0) -> dict[str, Any]:
+        value = int(value)
+        if not 0 <= value <= 100:
+            raise ValueError("Fan percent must be between 0 and 100")
+        if value == 0:
+            return self.send_gcode_script("M107\n", timeout)
+        pwm = round((value / 100) * 255)
+        return self.send_gcode_script(f"M106 S{pwm}\n", timeout)
+
+    def extrude(self, length_mm: float, timeout: float = 12.0) -> dict[str, Any]:
+        try:
+            length_mm = float(length_mm)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Extrusion length must be numeric") from exc
+        if length_mm == 0 or abs(length_mm) > 50:
+            raise ValueError("Extrusion length must be between -50 and 50 mm, excluding 0")
+        script = f"M83\nT0\nG1 E{length_mm:g} F300\n"
+        return self.send_gcode_script(script, timeout)
+
     def pause(self, timeout: float = 12.0) -> dict[str, Any]:
         return self._send_print_command("pause", {"PAUSE", "PAUSED"}, timeout)
 
