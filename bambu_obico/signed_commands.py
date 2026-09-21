@@ -27,9 +27,10 @@ class BambuSignedCommands:
     until pause/resume are validated on the target printer.
     """
 
-    def __init__(self, config: Config, signer: BambuSigner) -> None:
+    def __init__(self, config: Config, signer: BambuSigner, shared_conn=None) -> None:
         self.config = config
         self.signer = signer
+        self._shared_conn = shared_conn
 
         self._connected = threading.Event()
         self._subscribed = threading.Event()
@@ -50,17 +51,19 @@ class BambuSignedCommands:
         self._print_seq = 20000 + secrets.randbelow(5000)
         self._security_seq = 25000 + secrets.randbelow(5000)
 
-        self._client = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"bambu-obico-signed-{secrets.token_hex(4)}",
-        )
-        self._client.username_pw_set("bblp", config.access_code)
-        self._client.tls_set_context(self._tls_context())
-        self._client.reconnect_delay_set(min_delay=1, max_delay=30)
-        self._client.on_connect = self._on_connect
-        self._client.on_disconnect = self._on_disconnect
-        self._client.on_subscribe = self._on_subscribe
-        self._client.on_message = self._on_message
+        self._client = None
+        if self._shared_conn is None:
+            self._client = mqtt.Client(
+                mqtt.CallbackAPIVersion.VERSION2,
+                client_id=f"bambu-obico-signed-{secrets.token_hex(4)}",
+            )
+            self._client.username_pw_set("bblp", config.access_code)
+            self._client.tls_set_context(self._tls_context())
+            self._client.reconnect_delay_set(min_delay=1, max_delay=30)
+            self._client.on_connect = self._on_connect
+            self._client.on_disconnect = self._on_disconnect
+            self._client.on_subscribe = self._on_subscribe
+            self._client.on_message = self._on_message
 
     @property
     def report_topic(self) -> str:
@@ -100,7 +103,12 @@ class BambuSignedCommands:
             payload = json.loads(msg.payload.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             return
+        self._handle_payload(payload)
 
+    def _on_shared_message(self, payload: dict[str, Any]) -> None:
+        self._handle_payload(payload)
+
+    def _handle_payload(self, payload: dict[str, Any]) -> None:
         print_section = payload.get("print")
         if isinstance(print_section, dict):
             if print_section.get("command") == "push_status":
@@ -150,6 +158,22 @@ class BambuSignedCommands:
     def start(self, timeout: float = 10.0) -> None:
         self._connected.clear()
         self._subscribed.clear()
+
+        if self._shared_conn is not None:
+            self._shared_conn.add_message_listener(self._on_shared_message)
+            if not self._shared_conn.wait_connected(timeout):
+                self._shared_conn.remove_message_listener(self._on_shared_message)
+                raise SignedCommandError("Timed out waiting for main Bambu MQTT connection")
+            self._connected.set()
+            self._subscribed.set()
+
+            snapshot = self._shared_conn.state.snapshot()
+            if snapshot:
+                self._handle_payload({"print": snapshot})
+            LOG.info("Signed controls attached to main Bambu MQTT connection")
+            return
+
+        assert self._client is not None
         self._client.connect(self.config.host, self.config.port, keepalive=30)
         self._client.loop_start()
         if not self._connected.wait(timeout):
@@ -161,6 +185,16 @@ class BambuSignedCommands:
         self.request_full_state(timeout=min(timeout, 5.0))
 
     def stop(self) -> None:
+        self._trusted.clear()
+        self._connected.clear()
+        self._subscribed.clear()
+
+        if self._shared_conn is not None:
+            self._shared_conn.remove_message_listener(self._on_shared_message)
+            return
+
+        if self._client is None:
+            return
         try:
             self._client.disconnect()
         finally:
@@ -196,10 +230,17 @@ class BambuSignedCommands:
         with self._lock:
             self._pending[key] = (event, box)
         try:
-            info = self._client.publish(self.request_topic, wire_json, qos=0)
-            info.wait_for_publish(timeout=timeout)
-            if info.rc != mqtt.MQTT_ERR_SUCCESS:
-                raise SignedCommandError(f"MQTT publish failed: rc={info.rc}")
+            if self._shared_conn is not None:
+                try:
+                    self._shared_conn.publish_wire(wire_json, timeout=timeout, qos=0)
+                except (OSError, RuntimeError, TimeoutError) as exc:
+                    raise SignedCommandError(f"MQTT publish failed: {exc}") from exc
+            else:
+                assert self._client is not None
+                info = self._client.publish(self.request_topic, wire_json, qos=0)
+                info.wait_for_publish(timeout=timeout)
+                if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                    raise SignedCommandError(f"MQTT publish failed: rc={info.rc}")
             if not event.wait(timeout):
                 raise SignedCommandError(
                     f"No {family}.{command} response for sequence_id={seq}"
@@ -222,14 +263,18 @@ class BambuSignedCommands:
                 "push_target": 1,
             }
         }
-        info = self._client.publish(
-            self.request_topic,
-            json.dumps(payload, separators=(",", ":")),
-            qos=0,
-        )
-        info.wait_for_publish(timeout=timeout)
-        if info.rc != mqtt.MQTT_ERR_SUCCESS:
-            raise SignedCommandError(f"pushall publish failed: rc={info.rc}")
+        wire = json.dumps(payload, separators=(",", ":"))
+        if self._shared_conn is not None:
+            try:
+                self._shared_conn.publish_wire(wire, timeout=timeout, qos=0)
+            except (OSError, RuntimeError, TimeoutError) as exc:
+                raise SignedCommandError(f"pushall publish failed: {exc}") from exc
+        else:
+            assert self._client is not None
+            info = self._client.publish(self.request_topic, wire, qos=0)
+            info.wait_for_publish(timeout=timeout)
+            if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                raise SignedCommandError(f"pushall publish failed: rc={info.rc}")
 
         deadline = time.monotonic() + timeout
         with self._state_cond:
