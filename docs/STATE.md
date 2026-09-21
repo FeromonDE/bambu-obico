@@ -333,3 +333,17 @@ Validated on the real A1: `security.app_cert_install` succeeded and the printer 
 Added `check-cert` to query `security.app_cert_list` and report whether the current in-RAM trust store already contains this signing certificate.
 
 Added a non-print signed control probe: `bed45` sends the structured `print.set_bed_temp` command with target 45 C. Success is confirmed from later `print.push_status.bed_target_temper == 45`, not merely from a command echo. The normal trust workflow runs first and installs the app certificate only if it is absent. This avoids requiring a print for initial signed-command validation.
+
+
+### Obico pause/resume command path wired
+
+Inspected upstream `moonraker-obico` command handling. The Obico device WebSocket sends printer actions as a `commands` array containing objects such as `{"cmd":"pause"}`, `{"cmd":"resume"}`, and `{"cmd":"cancel"}`.
+
+The Bambu bridge now handles that same schema directly:
+- `pause` -> signed Bambu LAN pause;
+- `resume` -> signed Bambu LAN resume;
+- `cancel` remains deliberately disabled and is only logged/ignored;
+- command execution runs on a background thread so the Obico WebSocket receive loop is not blocked;
+- the signed control channel is created lazily on the first command and reuses the existing trust-check/install logic.
+
+Next gate: restart `bambu-obico.service`, run a controlled print, press Pause in Obico, confirm the A1 enters PAUSE and Obico lifecycle reports PrintPaused; then press Resume and confirm PrintResumed. Cancel remains disabled until both pass.
