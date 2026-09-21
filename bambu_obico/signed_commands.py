@@ -37,6 +37,7 @@ class BambuSignedCommands:
         self._state_cond = threading.Condition()
         self._last_gcode_state: str | None = None
         self._last_bed_target: int | None = None
+        self._last_nozzle_target: int | None = None
         self._fun: int | None = None
         self._device_public_key = None
         self._status_generation = 0
@@ -105,6 +106,7 @@ class BambuSignedCommands:
             if print_section.get("command") == "push_status":
                 state = print_section.get("gcode_state")
                 bed_target = print_section.get("bed_target_temper")
+                nozzle_target = print_section.get("nozzle_target_temper")
                 fun = print_section.get("fun")
                 with self._state_cond:
                     changed = False
@@ -113,6 +115,9 @@ class BambuSignedCommands:
                         changed = True
                     if isinstance(bed_target, (int, float)):
                         self._last_bed_target = int(round(bed_target))
+                        changed = True
+                    if isinstance(nozzle_target, (int, float)):
+                        self._last_nozzle_target = int(round(nozzle_target))
                         changed = True
                     if isinstance(fun, str):
                         try:
@@ -367,6 +372,20 @@ class BambuSignedCommands:
                     )
                 self._state_cond.wait(remaining)
 
+    def _wait_for_nozzle_target(self, target: int, timeout: float) -> int:
+        deadline = time.monotonic() + timeout
+        with self._state_cond:
+            while True:
+                if self._last_nozzle_target == target:
+                    return target
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SignedCommandError(
+                        f"Nozzle target did not reach {target} C; "
+                        f"last target={self._last_nozzle_target!r}"
+                    )
+                self._state_cond.wait(remaining)
+
     def _mqtt_bed_temp_supported(self) -> bool:
         # Bambu Studio uses print.fun bit 39 to decide between structured
         # set_bed_temp and the M140 gcode_line fallback.
@@ -443,6 +462,26 @@ class BambuSignedCommands:
             raise SignedCommandError(
                 f"Bed target change was not confirmed; target={target} C, "
                 f"reported bed_target_temper={self._last_bed_target!r}"
+            )
+        return response
+
+    def set_nozzle_temperature(self, target: int, timeout: float = 12.0) -> dict[str, Any]:
+        """Set and verify nozzle target temperature without starting a print."""
+        if not isinstance(target, int) or isinstance(target, bool):
+            raise ValueError("Nozzle target must be an integer")
+        if not 0 <= target <= 300:
+            raise ValueError("Nozzle target must be between 0 and 300 C")
+        if not self._trusted.is_set():
+            self.ensure_trust(timeout=min(timeout, 10.0))
+
+        response = self._send_gcode_line(f"M104 S{target}\n", timeout)
+        self.request_full_state(timeout=min(timeout, 5.0))
+        try:
+            self._wait_for_nozzle_target(target, timeout)
+        except SignedCommandError:
+            raise SignedCommandError(
+                f"Nozzle target change was not confirmed; target={target} C, "
+                f"reported nozzle_target_temper={self._last_nozzle_target!r}"
             )
         return response
 
