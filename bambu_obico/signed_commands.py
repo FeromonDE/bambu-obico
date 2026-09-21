@@ -37,6 +37,7 @@ class BambuSignedCommands:
         self._state_cond = threading.Condition()
         self._last_gcode_state: str | None = None
         self._last_bed_target: int | None = None
+        self._status_generation = 0
 
         self._lock = threading.RLock()
         self._pending: dict[tuple[str, str, str], tuple[threading.Event, dict[str, Any]]] = {}
@@ -110,7 +111,10 @@ class BambuSignedCommands:
                     if isinstance(bed_target, (int, float)):
                         self._last_bed_target = int(round(bed_target))
                         changed = True
+                    self._status_generation += 1
                     if changed:
+                        self._state_cond.notify_all()
+                    else:
                         self._state_cond.notify_all()
             self._resolve_pending("print", print_section)
 
@@ -141,6 +145,7 @@ class BambuSignedCommands:
         if not self._subscribed.wait(timeout):
             self.stop()
             raise SignedCommandError("Timed out subscribing to printer report topic")
+        self.request_full_state(timeout=min(timeout, 5.0))
 
     def stop(self) -> None:
         try:
@@ -190,6 +195,36 @@ class BambuSignedCommands:
         finally:
             with self._lock:
                 self._pending.pop(key, None)
+
+    def request_full_state(self, timeout: float = 5.0) -> None:
+        """Request a fresh push_status snapshot and wait until one arrives."""
+        with self._state_cond:
+            generation = self._status_generation
+
+        payload = {
+            "pushing": {
+                "sequence_id": "0",
+                "command": "pushall",
+                "version": 1,
+                "push_target": 1,
+            }
+        }
+        info = self._client.publish(
+            self.request_topic,
+            json.dumps(payload, separators=(",", ":")),
+            qos=0,
+        )
+        info.wait_for_publish(timeout=timeout)
+        if info.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise SignedCommandError(f"pushall publish failed: rc={info.rc}")
+
+        deadline = time.monotonic() + timeout
+        with self._state_cond:
+            while self._status_generation == generation:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SignedCommandError("Timed out waiting for push_status after pushall")
+                self._state_cond.wait(remaining)
 
     def check_trust(self, timeout: float = 5.0) -> bool:
         """Ask the printer whether our app certificate is currently trusted."""
@@ -333,6 +368,7 @@ class BambuSignedCommands:
             }
         )
 
+        ack_missing = False
         try:
             response = self._publish_and_wait(
                 "print", "set_bed_temp", seq, wire, min(timeout, 5.0)
@@ -347,10 +383,20 @@ class BambuSignedCommands:
         except SignedCommandError as exc:
             if not str(exc).startswith("No print.set_bed_temp response"):
                 raise
+            ack_missing = True
             response = {}
+            LOG.info("No direct set_bed_temp acknowledgement; verifying via push_status")
 
-        # Command echo alone is not treated as success. Confirm via telemetry.
-        self._wait_for_bed_target(target, timeout)
+        # Force a fresh state snapshot instead of relying on a spontaneous delta.
+        self.request_full_state(timeout=min(timeout, 5.0))
+        try:
+            self._wait_for_bed_target(target, timeout)
+        except SignedCommandError:
+            raise SignedCommandError(
+                f"Signed set_bed_temp was not confirmed; target={target} C, "
+                f"reported bed_target_temper={self._last_bed_target!r}, "
+                f"direct_ack={'missing' if ack_missing else 'received'}"
+            )
         return response
 
     def pause(self, timeout: float = 12.0) -> dict[str, Any]:
