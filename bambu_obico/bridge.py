@@ -32,6 +32,7 @@ def main() -> None:
     signed_control = None
     bambu = None
     control_lock = threading.RLock()
+    control_warmup_started = threading.Event()
 
     def presence_message():
         message = {
@@ -62,6 +63,15 @@ def main() -> None:
             signed_control.start()
             LOG.info("Signed Bambu control attached to main MQTT connection")
         return signed_control
+
+    def warm_signed_control() -> None:
+        try:
+            with control_lock:
+                control = get_signed_control()
+                control.warmup()
+            LOG.info("Signed Bambu control prewarmed")
+        except (SignedCommandError, SigningError, OSError, ValueError) as exc:
+            LOG.warning("Signed Bambu control warmup failed: %s", exc)
 
     def run_printer_command(command: str) -> None:
         nonlocal signed_control
@@ -249,6 +259,9 @@ def main() -> None:
 
     def on_bambu_state(state):
         nonlocal last_state
+        if not control_warmup_started.is_set() and cfg.signing_dir is not None:
+            control_warmup_started.set()
+            threading.Thread(target=warm_signed_control, daemon=True).start()
         with state_lock:
             last_state = state
             update = lifecycle.update(state)
