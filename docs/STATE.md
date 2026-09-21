@@ -352,3 +352,8 @@ Next gate: restart `bambu-obico.service`, run a controlled print, press Pause in
 ### Signed controls now reuse the main LAN MQTT session
 
 An Obico temperature command reached the bridge but the first implementation timed out while creating a second MQTT control connection from inside the service. The control architecture has been changed so signed commands reuse the already-established main Bambu LAN MQTT connection instead of opening a second session. `BambuConn` now exposes a safe publish path plus report listeners; `BambuSignedCommands` can attach to that connection, receive security/print replies through the shared report stream, and must not disconnect the main telemetry session when stopped. This also reduces connection pressure on the printer and keeps telemetry/control synchronized.
+
+
+### Obico temperature control validated end-to-end
+
+Validated on the real A1 through the Obico UI: an Obico `passthru` `_printer.set_temperature` request for the bed reached `bambu-obico`, the signed-control layer attached to the already-running main LAN MQTT connection, verified printer trust, obtained/cached the printer device public key via `app_cert_install`, used the encrypted `M140` fallback because structured bed control is not advertised, and confirmed the target through telemetry. The bridge logged `Executed Obico temperature command: bed -> 45 C`. This proves Obico UI -> passthru -> signed secured Bambu MQTT -> physical A1 bed target -> telemetry round-trip.
