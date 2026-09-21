@@ -48,6 +48,17 @@ def main() -> None:
                     message.update(update.message)
         return message
 
+    def get_signed_control() -> BambuSignedCommands:
+        nonlocal signed_control
+        if cfg.signing_dir is None:
+            raise SigningError("BAMBU_SIGNING_DIR is not configured")
+        if signed_control is None:
+            signer = BambuSigner(cfg.signing_dir)
+            signed_control = BambuSignedCommands(cfg, signer)
+            signed_control.start()
+            LOG.info("Signed Bambu control channel started")
+        return signed_control
+
     def run_printer_command(command: str) -> None:
         nonlocal signed_control
         if command not in {"pause", "resume"}:
@@ -59,23 +70,59 @@ def main() -> None:
 
         try:
             with control_lock:
-                if signed_control is None:
-                    signer = BambuSigner(cfg.signing_dir)
-                    signed_control = BambuSignedCommands(cfg, signer)
-                    signed_control.start()
-                    LOG.info("Signed Bambu control channel started")
-
+                control = get_signed_control()
                 if command == "pause":
-                    signed_control.pause()
+                    control.pause()
                 else:
-                    signed_control.resume()
+                    control.resume()
                 LOG.info("Executed Obico printer command: %s", command)
         except (SignedCommandError, SigningError, OSError, ValueError) as exc:
             LOG.error("Obico printer command %s failed: %s", command, exc)
 
+    def run_temperature_passthru(ref, heater, target_temp) -> None:
+        try:
+            target = int(target_temp)
+            heater_name = str(heater).lower()
+            with control_lock:
+                control = get_signed_control()
+                if "bed" in heater_name:
+                    control.set_bed_temperature(target)
+                elif "tool" in heater_name or "extruder" in heater_name or "nozzle" in heater_name:
+                    control.set_nozzle_temperature(target)
+                else:
+                    raise ValueError(f"Unsupported heater: {heater}")
+            LOG.info("Executed Obico temperature command: %s -> %s C", heater, target)
+            if ref is not None:
+                obico.send({"passthru": {"ref": ref, "ret": None}})
+        except (SignedCommandError, SigningError, OSError, ValueError) as exc:
+            LOG.error("Obico temperature command failed: %s", exc)
+            if ref is not None:
+                obico.send({"passthru": {"ref": ref, "error": str(exc)}})
+
     def on_obico_message(message):
         if webcam is not None:
             webcam.handle_obico_message(message)
+
+        passthru = message.get("passthru")
+        if isinstance(passthru, dict):
+            if (
+                passthru.get("target") == "_printer"
+                and passthru.get("func") == "set_temperature"
+            ):
+                args = passthru.get("args") or []
+                if len(args) >= 2:
+                    threading.Thread(
+                        target=run_temperature_passthru,
+                        args=(passthru.get("ref"), args[0], args[1]),
+                        daemon=True,
+                    ).start()
+                elif passthru.get("ref") is not None:
+                    obico.send({
+                        "passthru": {
+                            "ref": passthru.get("ref"),
+                            "error": "set_temperature requires heater and target_temp",
+                        }
+                    })
 
         commands = message.get("commands")
         if not isinstance(commands, list):
