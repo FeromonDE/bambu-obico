@@ -29,6 +29,7 @@ def main() -> None:
     state_lock = threading.RLock()
     webcam = None
     signed_control = None
+    bambu = None
     control_lock = threading.RLock()
 
     def presence_message():
@@ -52,11 +53,13 @@ def main() -> None:
         nonlocal signed_control
         if cfg.signing_dir is None:
             raise SigningError("BAMBU_SIGNING_DIR is not configured")
+        if bambu is None:
+            raise SignedCommandError("Main Bambu MQTT connection is not ready")
         if signed_control is None:
             signer = BambuSigner(cfg.signing_dir)
-            signed_control = BambuSignedCommands(cfg, signer)
+            signed_control = BambuSignedCommands(cfg, signer, shared_conn=bambu)
             signed_control.start()
-            LOG.info("Signed Bambu control channel started")
+            LOG.info("Signed Bambu control attached to main MQTT connection")
         return signed_control
 
     def run_printer_command(command: str) -> None:
