@@ -37,6 +37,8 @@ class BambuSignedCommands:
         self._state_cond = threading.Condition()
         self._last_gcode_state: str | None = None
         self._last_bed_target: int | None = None
+        self._fun: int | None = None
+        self._device_public_key = None
         self._status_generation = 0
 
         self._lock = threading.RLock()
@@ -103,6 +105,7 @@ class BambuSignedCommands:
             if print_section.get("command") == "push_status":
                 state = print_section.get("gcode_state")
                 bed_target = print_section.get("bed_target_temper")
+                fun = print_section.get("fun")
                 with self._state_cond:
                     changed = False
                     if isinstance(state, str):
@@ -111,6 +114,11 @@ class BambuSignedCommands:
                     if isinstance(bed_target, (int, float)):
                         self._last_bed_target = int(round(bed_target))
                         changed = True
+                    if isinstance(fun, str):
+                        try:
+                            self._fun = int(fun, 16)
+                        except ValueError:
+                            pass
                     self._status_generation += 1
                     if changed:
                         self._state_cond.notify_all()
@@ -279,6 +287,15 @@ class BambuSignedCommands:
                 "Printer did not accept app certificate: "
                 f"result={response.get('result')!r}"
             )
+        printer_cert = response.get("printer_cert")
+        if isinstance(printer_cert, str) and printer_cert.strip():
+            try:
+                self._device_public_key = self.signer.public_key_from_certificate(
+                    printer_cert.encode("ascii")
+                )
+                LOG.info("Cached printer device public key")
+            except Exception as exc:
+                LOG.warning("Could not parse printer device certificate: %s", exc)
         self._trusted.set()
         LOG.info("Printer accepted app certificate for this session")
         return response
@@ -350,8 +367,44 @@ class BambuSignedCommands:
                     )
                 self._state_cond.wait(remaining)
 
+    def _mqtt_bed_temp_supported(self) -> bool:
+        # Bambu Studio uses print.fun bit 39 to decide between structured
+        # set_bed_temp and the M140 gcode_line fallback.
+        return self._fun is not None and bool((self._fun >> 39) & 1)
+
+    def _ensure_device_public_key(self, timeout: float) -> None:
+        if self._device_public_key is not None:
+            return
+        # app_cert_install is idempotent and its SUCCESS reply carries
+        # printer_cert, which provides the RSA public key needed for param_enc.
+        self.install_trust(timeout=timeout)
+        if self._device_public_key is None:
+            raise SignedCommandError("Printer did not provide a usable device certificate")
+
+    def _send_gcode_line(self, gcode: str, timeout: float) -> dict[str, Any]:
+        self._ensure_device_public_key(timeout=min(timeout, 10.0))
+        seq = self._next_print_seq()
+        param_enc = self.signer.encrypt_field(self._device_public_key, gcode)
+        wire = self.signer.sign_print(
+            {
+                "sequence_id": seq,
+                "command": "gcode_line",
+                "param_enc": param_enc,
+            }
+        )
+        response = self._publish_and_wait(
+            "print", "gcode_line", seq, wire, min(timeout, 5.0)
+        )
+        result = str(response.get("result") or "").upper()
+        if result and result != "SUCCESS":
+            raise SignedCommandError(
+                f"Printer rejected gcode_line: result={response.get('result')!r}, "
+                f"reason={response.get('reason')!r}, err_code={response.get('err_code')!r}"
+            )
+        return response
+
     def set_bed_temperature(self, target: int, timeout: float = 12.0) -> dict[str, Any]:
-        """Set bed target temperature with the structured signed MQTT command."""
+        """Set and verify bed target temperature without starting a print."""
         if not isinstance(target, int) or isinstance(target, bool):
             raise ValueError("Bed target must be an integer")
         if not 0 <= target <= 100:
@@ -359,17 +412,16 @@ class BambuSignedCommands:
         if not self._trusted.is_set():
             self.ensure_trust(timeout=min(timeout, 10.0))
 
-        seq = self._next_print_seq()
-        wire = self.signer.sign_print(
-            {
-                "sequence_id": seq,
-                "command": "set_bed_temp",
-                "temp": target,
-            }
-        )
-
-        ack_missing = False
-        try:
+        if self._mqtt_bed_temp_supported():
+            LOG.info("Using structured print.set_bed_temp")
+            seq = self._next_print_seq()
+            wire = self.signer.sign_print(
+                {
+                    "sequence_id": seq,
+                    "command": "set_bed_temp",
+                    "temp": target,
+                }
+            )
             response = self._publish_and_wait(
                 "print", "set_bed_temp", seq, wire, min(timeout, 5.0)
             )
@@ -380,22 +432,17 @@ class BambuSignedCommands:
                     f"result={response.get('result')!r}, "
                     f"reason={response.get('reason')!r}"
                 )
-        except SignedCommandError as exc:
-            if not str(exc).startswith("No print.set_bed_temp response"):
-                raise
-            ack_missing = True
-            response = {}
-            LOG.info("No direct set_bed_temp acknowledgement; verifying via push_status")
+        else:
+            LOG.info("Structured bed control is not advertised; using encrypted M140 fallback")
+            response = self._send_gcode_line(f"M140 S{target}\n", timeout)
 
-        # Force a fresh state snapshot instead of relying on a spontaneous delta.
         self.request_full_state(timeout=min(timeout, 5.0))
         try:
             self._wait_for_bed_target(target, timeout)
         except SignedCommandError:
             raise SignedCommandError(
-                f"Signed set_bed_temp was not confirmed; target={target} C, "
-                f"reported bed_target_temper={self._last_bed_target!r}, "
-                f"direct_ack={'missing' if ack_missing else 'received'}"
+                f"Bed target change was not confirmed; target={target} C, "
+                f"reported bed_target_temper={self._last_bed_target!r}"
             )
         return response
 
