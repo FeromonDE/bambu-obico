@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 
@@ -82,6 +83,16 @@ def main() -> None:
         except (SignedCommandError, SigningError, OSError, ValueError) as exc:
             LOG.error("Obico printer command %s failed: %s", command, exc)
 
+    def send_passthru_reply(ref, error=None, ret=None) -> None:
+        if ref is None:
+            return
+        payload = {"ref": ref}
+        if error is not None:
+            payload["error"] = str(error)
+        else:
+            payload["ret"] = ret
+        obico.send({"passthru": payload})
+
     def run_temperature_passthru(ref, heater, target_temp) -> None:
         try:
             target = int(target_temp)
@@ -95,37 +106,108 @@ def main() -> None:
                 else:
                     raise ValueError(f"Unsupported heater: {heater}")
             LOG.info("Executed Obico temperature command: %s -> %s C", heater, target)
-            if ref is not None:
-                obico.send({"passthru": {"ref": ref, "ret": None}})
+            send_passthru_reply(ref)
         except (SignedCommandError, SigningError, OSError, ValueError) as exc:
             LOG.error("Obico temperature command failed: %s", exc)
-            if ref is not None:
-                obico.send({"passthru": {"ref": ref, "error": str(exc)}})
+            send_passthru_reply(ref, error=exc)
+
+    def run_control_passthru(ref, func, args) -> None:
+        try:
+            with control_lock:
+                control = get_signed_control()
+
+                if func == "jog":
+                    if len(args) != 1 or not isinstance(args[0], dict) or len(args[0]) != 1:
+                        raise ValueError("jog expects one {axis: distance} argument")
+                    axis, distance = next(iter(args[0].items()))
+                    control.jog(axis, distance)
+                    LOG.info("Executed Obico jog: %s %s mm", axis, distance)
+
+                elif func == "home":
+                    if len(args) != 1:
+                        raise ValueError("home expects one axes argument")
+                    control.home(args[0])
+                    LOG.info("Executed Obico home: %s", args[0])
+
+                elif func == "commands":
+                    if len(args) != 1 or not isinstance(args[0], str):
+                        raise ValueError("commands expects one G-code string")
+                    script = args[0].strip()
+
+                    if script == "M18":
+                        control.disable_steppers()
+                        LOG.info("Executed Obico disable steppers")
+
+                    elif re.fullmatch(r"M220\\s+S\\d{1,3}", script):
+                        value = int(re.search(r"S(\\d+)", script).group(1))
+                        control.set_print_speed_percent(value)
+                        LOG.info("Executed Obico print speed: %s%%", value)
+
+                    elif re.fullmatch(r"M221\\s+S\\d{1,3}", script):
+                        value = int(re.search(r"S(\\d+)", script).group(1))
+                        control.set_flow_percent(value)
+                        LOG.info("Executed Obico flow rate: %s%%", value)
+
+                    elif script == "M107":
+                        control.set_fan_percent(0)
+                        LOG.info("Executed Obico fan speed: 0%%")
+
+                    elif re.fullmatch(r"M106\\s+S\\d{1,3}", script):
+                        pwm = int(re.search(r"S(\\d+)", script).group(1))
+                        if not 0 <= pwm <= 255:
+                            raise ValueError("M106 PWM must be 0..255")
+                        percent = round((pwm / 255) * 100)
+                        control.set_fan_percent(percent)
+                        LOG.info("Executed Obico fan speed: %s%%", percent)
+
+                    else:
+                        normalized = script.replace("\\r", "")
+                        match = re.fullmatch(
+                            r"M83\\nT0\\nG1\\s+E(-?(?:1|10|50)(?:\\.0+)?)\\s+F300",
+                            normalized,
+                        )
+                        if match:
+                            length = float(match.group(1))
+                            control.extrude(length)
+                            LOG.info("Executed Obico extrusion: %s mm", length)
+                        else:
+                            raise ValueError("G-code command is not enabled for Bambu control")
+                else:
+                    raise ValueError(f"Unsupported passthru function: {func}")
+
+            send_passthru_reply(ref)
+        except (SignedCommandError, SigningError, OSError, ValueError) as exc:
+            LOG.error("Obico control command failed: %s", exc)
+            send_passthru_reply(ref, error=exc)
 
     def on_obico_message(message):
         if webcam is not None:
             webcam.handle_obico_message(message)
 
         passthru = message.get("passthru")
-        if isinstance(passthru, dict):
-            if (
-                passthru.get("target") == "_printer"
-                and passthru.get("func") == "set_temperature"
-            ):
-                args = passthru.get("args") or []
+        if isinstance(passthru, dict) and passthru.get("target") == "_printer":
+            func = passthru.get("func")
+            args = passthru.get("args") or []
+            ref = passthru.get("ref")
+
+            if func == "set_temperature":
                 if len(args) >= 2:
                     threading.Thread(
                         target=run_temperature_passthru,
-                        args=(passthru.get("ref"), args[0], args[1]),
+                        args=(ref, args[0], args[1]),
                         daemon=True,
                     ).start()
-                elif passthru.get("ref") is not None:
-                    obico.send({
-                        "passthru": {
-                            "ref": passthru.get("ref"),
-                            "error": "set_temperature requires heater and target_temp",
-                        }
-                    })
+                else:
+                    send_passthru_reply(
+                        ref,
+                        error="set_temperature requires heater and target_temp",
+                    )
+            elif func in {"jog", "home", "commands"}:
+                threading.Thread(
+                    target=run_control_passthru,
+                    args=(ref, func, args),
+                    daemon=True,
+                ).start()
 
         commands = message.get("commands")
         if not isinstance(commands, list):
