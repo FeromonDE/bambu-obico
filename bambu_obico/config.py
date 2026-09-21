@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -16,6 +17,7 @@ class Config:
     obico_auth_token: str | None = None
     webcam_snapshot_url: str | None = None
     webcam_h264_http_url: str | None = None
+    signing_dir: Path | None = None
 
     @property
     def report_topic(self) -> str:
@@ -40,6 +42,8 @@ def load_config() -> Config:
     if missing:
         raise SystemExit("Missing required environment variables: " + ", ".join(missing))
 
+    signing_raw = (os.getenv("BAMBU_SIGNING_DIR") or "").strip()
+
     return Config(
         host=required["BAMBU_HOST"],
         serial=required["BAMBU_SERIAL"],
@@ -51,4 +55,5 @@ def load_config() -> Config:
         obico_auth_token=(os.getenv("OBICO_AUTH_TOKEN") or "").strip() or None,
         webcam_snapshot_url=(os.getenv("WEBCAM_SNAPSHOT_URL") or "").strip() or None,
         webcam_h264_http_url=(os.getenv("WEBCAM_H264_HTTP_URL") or "").strip() or None,
+        signing_dir=Path(signing_raw).expanduser() if signing_raw else None,
     )
