@@ -301,3 +301,18 @@ Lifecycle now remembers the last positive Bambu remaining-time estimate and reus
 ### Cloud control validation (2026-09-20)
 
 Cloud MQTT read access is proven, but an unsigned `print.pause` published through the cloud broker did **not** pause the live A1. The printer/report stream echoed `command=pause` with `sequence_id=0` and no `result` or `reason`; physical state did not change. Therefore an echoed command is not treated as execution acknowledgement. Keep Obico controls disabled. Current third-party protocol research indicates post-Jan-2025 firmware signs command payloads with RSA-SHA256 and a certificate id; investigate signed-command compatibility before another live control test. Do not enable stop/cancel.
+
+
+## Signed LAN control implementation
+
+Locally provisioned signing credentials can now be supplied through `BAMBU_SIGNING_DIR`. The directory must contain `slicer_key.pem`, `slicer_cert.pem`, and `slicer_crl.pem`; credential contents are never stored in the repository.
+
+Implemented:
+- RSA-SHA256 / PKCS#1 v1.5 signing for `print` MQTT messages with the expected `header` envelope and certificate-derived `cert_id`.
+- Local validation that the RSA private key matches the leaf certificate and that the CRL parses.
+- `security.app_cert_install` support to provision the printer's volatile trust store for the current session.
+- A dedicated signed LAN control transport exposing only pause/resume. Stop/cancel remain intentionally disabled.
+- Success for pause/resume is confirmed from the resulting `push_status.gcode_state` transition rather than treating a command echo as execution acknowledgement.
+- `python -m bambu_obico.signed_command_probe validate|install-cert|pause|resume` for staged validation before wiring Obico UI controls.
+
+Next gate: place credentials locally on the target host, run `validate`, then `install-cert`, and only then test pause/resume on a controlled print. Do not wire Obico pause/cancel until the signed LAN path is confirmed on the real A1.
