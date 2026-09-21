@@ -321,3 +321,8 @@ Next gate: place credentials locally on the target host, run `validate`, then `i
 ### Signing credential validation successful
 
 Validated on the target host: the locally provisioned signing directory loads successfully; the RSA private key matches the leaf certificate, and the CRL parses correctly. No credential contents were printed or committed. Next validation step is `security.app_cert_install` against the real A1 while idle, before testing signed pause/resume.
+
+
+### Printer trust provisioning validated
+
+Validated on the real A1: `security.app_cert_install` succeeded and the printer accepted the locally provisioned application certificate for the current session. This confirms the signing certificate/CRL pair is accepted by the printer. Cloud mode remains intentionally unchanged; Developer/LAN-only mode is not enabled. Next gate: verify the printer still appears Online in Bambu Handy/Studio, then test signed `pause` on a controlled print and confirm success only from the resulting printer state transition.
