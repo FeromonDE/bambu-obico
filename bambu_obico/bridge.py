@@ -10,6 +10,7 @@ from .connection import BambuConn
 from .obico_conn import ObicoConn
 from .lifecycle import PrintLifecycle
 from .webcam import WebcamBridge
+from .snapshot_poster import SnapshotPoster
 from .signed_commands import BambuSignedCommands, SignedCommandError
 from .signing import BambuSigner, SigningError
 
@@ -29,6 +30,7 @@ def main() -> None:
     last_state = None
     state_lock = threading.RLock()
     webcam = None
+    snapshot_poster = None
     signed_control = None
     bambu = None
     control_lock = threading.RLock()
@@ -193,6 +195,10 @@ def main() -> None:
     def on_obico_message(message):
         if webcam is not None:
             webcam.handle_obico_message(message)
+        if snapshot_poster is not None:
+            remote_status = message.get("remote_status")
+            if isinstance(remote_status, dict):
+                snapshot_poster.update_remote_status(remote_status)
 
         passthru = message.get("passthru")
         if isinstance(passthru, dict) and passthru.get("target") == "_printer":
@@ -255,10 +261,20 @@ def main() -> None:
         )
         webcam.start()
 
+        snapshot_poster = SnapshotPoster(
+            cfg.obico_server,
+            cfg.obico_auth_token,
+            cfg.webcam_snapshot_url,
+            camera_name="Eufy",
+        )
+        snapshot_poster.start()
+
     threading.Thread(target=obico.run_forever, daemon=True).start()
 
     def on_bambu_state(state):
         nonlocal last_state
+        if snapshot_poster is not None:
+            snapshot_poster.update_printer_state(state)
         if not control_warmup_started.is_set() and cfg.signing_dir is not None:
             control_warmup_started.set()
             threading.Thread(target=warm_signed_control, daemon=True).start()
@@ -289,6 +305,8 @@ def main() -> None:
     finally:
         if signed_control is not None:
             signed_control.stop()
+        if snapshot_poster is not None:
+            snapshot_poster.stop()
         if webcam is not None:
             webcam.stop()
         obico.stop()
