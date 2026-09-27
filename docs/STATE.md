@@ -357,3 +357,19 @@ An Obico temperature command reached the bridge but the first implementation tim
 ### Obico temperature control validated end-to-end
 
 Validated on the real A1 through the Obico UI: an Obico `passthru` `_printer.set_temperature` request for the bed reached `bambu-obico`, the signed-control layer attached to the already-running main LAN MQTT connection, verified printer trust, obtained/cached the printer device public key via `app_cert_install`, used the encrypted `M140` fallback because structured bed control is not advertised, and confirmed the target through telemetry. The bridge logged `Executed Obico temperature command: bed -> 45 C`. This proves Obico UI -> passthru -> signed secured Bambu MQTT -> physical A1 bed target -> telemetry round-trip.
+
+
+### JPEG snapshot pipeline for history preview and timelapse
+
+Root cause of missing camera preview / timelapse was identified: the H264/WebRTC path only provides live video. Obico's print-history poster, AI frames, and timelapse are built from JPEG uploads to `POST /api/v1/octo/pic/`.
+
+Implemented `SnapshotPoster`:
+- captures JPEG directly from the configured snapshot URL (go2rtc frame endpoint is sufficient; MJPEG is not required);
+- uploads as the primary `Eufy` camera using printer-token authentication;
+- while printing, non-`viewing_boost` uploads become `raw/<printer>/<print>/<timestamp>.jpg` on Obico and therefore feed timelapse generation;
+- cadence matches moonraker-obico: 10 s while viewing or failure watching is active, otherwise 120 s;
+- first frame is forced immediately when a new print starts;
+- viewing transitions can send a separate `viewing_boost=true` snapshot;
+- bridge forwards Bambu print state and Obico `remote_status` to the poster.
+
+Obico server behavior verified from upstream: default finished-print timelapse threshold is 600 s (10 min), and timelapse compilation requires at least one raw JPEG. The observed 12-minute print was therefore long enough; the missing raw JPEG stream was the blocker, not the threshold or H264 format.
