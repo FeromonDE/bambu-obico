@@ -381,3 +381,13 @@ After a report that history preview was still missing and the service log showed
 - `SnapshotPoster` now starts whenever `WEBCAM_SNAPSHOT_URL` is configured; it no longer depends on the H264 live-stream setting.
 - print/idle transitions are logged at INFO with the observed `gcode_state`.
 - added `python -m bambu_obico.snapshot_probe`: it fetches one JPEG, validates JPEG framing, then uploads it to Obico as `viewing_boost=true`. This can refresh the printer preview while idle and cleanly separates camera-fetch problems from Obico-upload/auth problems.
+
+
+### Snapshot probe validated on target host
+
+Validated on the Klipper host with `python -m bambu_obico.snapshot_probe`:
+- go2rtc snapshot fetch succeeded;
+- received a complete JPEG (~90 KB);
+- authenticated upload to Obico `/api/v1/octo/pic/` succeeded while idle using `viewing_boost=true`.
+
+Therefore the camera snapshot endpoint, network path, printer auth token, multipart upload, and Obico snapshot API are all working. Remaining verification is the long-running service path: restart `bambu-obico.service`, confirm `Obico JPEG snapshot poster started`, then during a new print confirm `Snapshot poster print state: printing` and `First Obico print snapshot uploaded`. Old print-history entries cannot be retroactively populated by the idle probe.
