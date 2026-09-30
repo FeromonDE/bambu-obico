@@ -373,3 +373,11 @@ Implemented `SnapshotPoster`:
 - bridge forwards Bambu print state and Obico `remote_status` to the poster.
 
 Obico server behavior verified from upstream: default finished-print timelapse threshold is 600 s (10 min), and timelapse compilation requires at least one raw JPEG. The observed 12-minute print was therefore long enough; the missing raw JPEG stream was the blocker, not the threshold or H264 format.
+
+
+### Snapshot diagnostics after missing history preview
+
+After a report that history preview was still missing and the service log showed no snapshot activity, the JPEG path was made independently diagnosable:
+- `SnapshotPoster` now starts whenever `WEBCAM_SNAPSHOT_URL` is configured; it no longer depends on the H264 live-stream setting.
+- print/idle transitions are logged at INFO with the observed `gcode_state`.
+- added `python -m bambu_obico.snapshot_probe`: it fetches one JPEG, validates JPEG framing, then uploads it to Obico as `viewing_boost=true`. This can refresh the printer preview while idle and cleanly separates camera-fetch problems from Obico-upload/auth problems.
