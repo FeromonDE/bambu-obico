@@ -65,11 +65,14 @@ class SnapshotPoster:
         raw = str(state.get("gcode_state") or "").upper()
         printing = raw in _PRINTING_STATES
         with self._lock:
-            if printing and not self._printing:
+            previous = self._printing
+            if printing and not previous:
                 # Always create at least one raw frame at the beginning of a print.
                 self._last_post_ts = 0.0
                 self._normal_posts_this_print = 0
             self._printing = printing
+        if printing != previous:
+            LOG.info("Snapshot poster print state: %s (gcode_state=%s)", "printing" if printing else "idle", raw or "<empty>")
 
     def update_remote_status(self, remote_status: Mapping[str, Any]) -> None:
         with self._lock:
@@ -80,6 +83,14 @@ class SnapshotPoster:
                 self._should_watch = bool(remote_status.get("should_watch"))
             if self._viewing and not was_viewing:
                 self._viewing_boost.set()
+
+    def capture_once(self) -> bytes:
+        """Fetch one JPEG from the configured snapshot endpoint."""
+        return self._capture()
+
+    def post_once(self, viewing_boost: bool = True) -> None:
+        """Capture and upload one JPEG immediately."""
+        self._post(viewing_boost=viewing_boost)
 
     def _capture(self) -> bytes:
         response = self._session.get(
