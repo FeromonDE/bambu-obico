@@ -260,7 +260,10 @@ def main() -> None:
             relay_to_obico=obico.send,
         )
         webcam.start()
+    elif cfg.webcam_h264_http_url:
+        LOG.warning("WEBCAM_H264_HTTP_URL is configured but WEBCAM_SNAPSHOT_URL is missing")
 
+    if cfg.webcam_snapshot_url:
         snapshot_poster = SnapshotPoster(
             cfg.obico_server,
             cfg.obico_auth_token,
@@ -268,6 +271,8 @@ def main() -> None:
             camera_name="Eufy",
         )
         snapshot_poster.start()
+    else:
+        LOG.warning("WEBCAM_SNAPSHOT_URL is not configured; history preview/timelapse snapshots are disabled")
 
     threading.Thread(target=obico.run_forever, daemon=True).start()
 
